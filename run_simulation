@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+
+# todo: fix better confs/method
+(cd AMLSim &&
+# 1. Generate transaction CSV files from parameter files (python)
+python3 scripts/transaction_graph_generator.py paramFiles/ml_agent/conf.json
+
+# 2. Build and launch the transaction simulator (Java)
+scripts/build_AMLSim.sh
+scripts/run_AMLSim.sh paramFiles/ml_agent/conf.json
+
+# 3. Convert the raw transaction log file
+python3 scripts/convert_logs.py paramFiles/ml_agent/conf.json
+)
+# optional: Export statistical information of the output data to image files (optional)
+#python3 scripts/visualize/plot_distributions.py paramFiles/ml_agent/conf.json
+
+# optional: Validate alert transaction subgraphs by comparison with the parameter file (optional)
+#python3 scripts/validation/validate_alerts.py paramFiles/ml_agent/conf.json
+
+# optional: Visualize transaction network
+#(cd visualizations &&
+#  python3 network.py
+#)
+
+# 4. Transform transaction in the right format for the business rules engine
+python3 br_engine/transform_transactions.py
+
+# 5. Run business rule engine on the transactions
+python3 br_engine/run_business_rules.py --days-to-process 2020-01-01
+
+# 6. Transform the alerts to performance and feedback
+(cd learning_agent &&
+  python3 process_alerts.py
+)
+
+# 7. Let the intelligent agent tune the parameter file(s) based on the feedback
+(cd learning_agent &&
+  python3 baseline_agent.py
+)
+# 8. Clean up code
+rm -r output/*
+
+# 9. Remove all log and generated image files from outputs directory and a temporal directory
+(cd AMLSim &&
+  scripts/clean_logs.sh
+)
+
+
+# todo: fix prints
