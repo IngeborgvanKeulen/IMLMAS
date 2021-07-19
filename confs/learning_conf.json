@@ -1,0 +1,134 @@
+{
+  "agent": "svm",
+  "step": 107,
+  "process_alerts": {
+    "input_path": "../AMLSim/outputs/ml_agent",
+    "output_path": "../output/",
+    "result_path": "./results/",
+    "result_file": "results.csv",
+    "engine_zip": "/files/alert_engine_output.zip",
+    "base_date": "2020-01-01",
+    "full_investigation": true
+  },
+  "reinforcement": {
+    "epsilon": 0.99,
+    "learning_rate": 0.1,
+    "discount_factor": 0.9,
+    "action_types": [
+      "accounts",
+      "amount",
+      "period"
+    ],
+    "limits": {
+      "accounts": {
+        "min": 4,
+        "max": 50,
+        "step": 1
+      },
+      "amount": {
+        "min": 10,
+        "max": 7000,
+        "step": 10
+      },
+      "period": {
+        "min": 1,
+        "max": 30,
+        "step": 1
+      }
+    },
+    "parameter_path": "../AMLSim/paramFiles/ml_agent/alertPatterns.csv",
+    "output_path": "../AMLSim/paramFiles/ml_agent/alertPatterns.csv",
+    "weights_path": "./models/weights.npy",
+    "prevented_actions_path": "./results/prevented_actions.csv",
+    "laundered_actions_path": "./results/laundered_actions.csv",
+    "temp_input_path": "../AMLSim/outputs/ml_agent"
+  },
+  "neural_network": {
+    "epsilon": 0.97,
+    "learning_rate": 0.1,
+    "discount_factor": 0.9,
+    "action_types": [
+      "accounts",
+      "amount",
+      "period"
+    ],
+    "limits": {
+      "accounts": {
+        "min": 4,
+        "max": 50,
+        "step": 1
+      },
+      "amount": {
+        "min": 10,
+        "max": 7000,
+        "step": 10
+      },
+      "period": {
+        "min": 1,
+        "max": 30,
+        "step": 1
+      }
+    },
+    "parameter_path": "../AMLSim/paramFiles/ml_agent/alertPatterns.csv",
+    "output_path": "../AMLSim/paramFiles/ml_agent/alertPatterns.csv",
+    "weights_path": "./models/weights.npy",
+    "checkpoint_path": "./models/nn_cp.ckpt"
+  },
+  "baseline": {
+    "parameter_path": "../AMLSim/paramFiles/ml_agent/alertPatterns.csv",
+    "output_path": "../AMLSim/paramFiles/ml_agent/alertPatterns.csv",
+    "success_threshold": 0.5,
+    "options": [
+      "accounts",
+      "amount",
+      "period"
+    ],
+    "changes": {
+      "accounts": 1,
+      "amount": -1000,
+      "period": 1
+    }
+  },
+  "svm": {
+    "kernel": "rbf",
+    "svm_gamma": "scale",
+    "svm_epsilon": 0.1,
+    "train_steps": 5,
+    "pred_steps": 10,
+    "epsilon": 0.99,
+    "learning_rate": 0.01,
+    "discount_factor": 0.9,
+    "action_types": [
+      "accounts",
+      "amount",
+      "period"
+    ],
+    "limits": {
+      "accounts": {
+        "min": 4,
+        "max": 50,
+        "step": 1
+      },
+      "amount": {
+        "min": 10,
+        "max": 7000,
+        "step": 10
+      },
+      "period": {
+        "min": 1,
+        "max": 30,
+        "step": 1
+      }
+    },
+    "parameter_path": "../AMLSim/paramFiles/ml_agent/alertPatterns.csv",
+    "output_path": "../AMLSim/paramFiles/ml_agent/alertPatterns.csv",
+    "train_model_path": "./models/svm_model_train.pkl",
+    "prediction_model_path": "./models/svm_model_pred.pkl",
+    "classification_model_path": "./models/svm_model_class.pkl",
+    "prevented_actions_path": "./results/prevented_actions.csv",
+    "laundered_actions_path": "./results/laundered_actions.csv",
+    "results_path": "./results/results.csv",
+    "data_path": "./models/data.npy",
+    "batch_size": 64
+  }
+}

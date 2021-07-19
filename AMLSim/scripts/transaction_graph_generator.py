@@ -123,6 +123,7 @@ def get_degrees(deg_csv, num_v):
     """
     _in_deg = list()  # In-degree sequence
     _out_deg = list()  # Out-degree sequence
+    # noinspection PyPackageRequirements
     with open(deg_csv, "r") as rf:  # Load in/out-degree sequences from parameter CSV file for each account
         reader = csv.reader(rf)
         next(reader)
@@ -130,8 +131,8 @@ def get_degrees(deg_csv, num_v):
             if row[0].startswith("#"):
                 continue
             nv = int(row[0])
-            _in_deg.extend(int(row[1]) * [nv])
-            _out_deg.extend(int(row[2]) * [nv])
+            _in_deg.extend([int(row[1])] * nv)
+            _out_deg.extend([int(row[2])] * nv)
 
     in_len, out_len = len(_in_deg), len(_out_deg)
     if in_len != out_len:
@@ -235,6 +236,9 @@ class TransactionGenerator:
         high_risk_business_str = other_conf.get("high_risk_business", "")
         self.high_risk_countries = set(high_risk_countries_str.split(","))  # List of high-risk country codes
         self.high_risk_business = set(high_risk_business_str.split(","))  # List of high-risk business types
+        self.isolated_aml = other_conf["isolated_aml"]
+        self.ratio_normal_to_sar = other_conf.get("ratio_normal_to_sar", 0.0)
+        self.ratio_sar_to_normal = other_conf.get("ratio_sar_to_normal", 0.0)
 
         self.tx_id = 0  # Transaction ID
         self.alert_id = 0  # Alert ID from the alert parameter file
@@ -260,7 +264,7 @@ class TransactionGenerator:
         """
         if not self.hubs:
             raise ValueError("No main account candidates found. "
-                             "Please try again with smaller value of the 'degree_threshold' parameter in conf.json.")
+                             "Please try again with smaller value of the 'degree_threshold' parameter in amlsim_conf.json.")
 
     def set_main_acct_candidates(self):
         """Choose hub accounts with larger degree than the specified threshold
@@ -271,27 +275,38 @@ class TransactionGenerator:
         self.hubs = set(hub_list)
         self.check_hub_exists()
 
-    def add_normal_sar_edges(self, ratio=1.0):
-        """Add extra edges from normal accounts to SAR accounts to adjust transaction graph features
-        :param ratio: Ratio of the number of edges to be added from normal accounts to SAR accounts
+    def add_normal_sar_edges(self):
+        """Add extra edges from normal accounts to SAR accounts (and vice versa) to adjust transaction graph features
+        :param ratio: Ratio of the number of edges to be added from normal accounts to SAR accounts (or vice versa)
         compared to the number of total SAR accounts
         """
         sar_flags = nx.get_node_attributes(self.g, IS_SAR_KEY)
-        orig_candidates = [n for n in self.hubs if not sar_flags.get(n, False)]  # Normal
-        bene_candidates = [n for n, sar in sar_flags.items() if sar]  # SAR
-        num = int(len(bene_candidates) * ratio)
-        if num <= 0:
-            return
+        normal_candidates = [n for n in self.hubs if not sar_flags.get(n, False)]  # Normal
+        sar_candidates = [n for n, sar in sar_flags.items() if sar]  # SAR
 
-        num_origs = len(orig_candidates)
-        print("Number of orig/bene candidates: %d/%d" % (num_origs, len(bene_candidates)))
-        orig_list = random.choices(orig_candidates, k=num)
-        bene_list = random.choices(bene_candidates, k=num)
-        for i in range(num):
-            _orig = orig_list[i]
-            _bene = bene_list[i]
-            self.add_transaction(_orig, _bene)
-        logger.info("Added %d edges from normal accounts to sar accounts" % num)
+        num = int(len(sar_candidates) * self.ratio_normal_to_sar)
+        if num > 0:
+            num_origs = len(normal_candidates)
+            print("Number of orig/bene candidates: %d/%d" % (num_origs, len(sar_candidates)))
+            orig_list = random.choices(normal_candidates, k=num)
+            bene_list = random.choices(sar_candidates, k=num)
+            for i in range(num):
+                _orig = orig_list[i]
+                _bene = bene_list[i]
+                self.add_transaction(_orig, _bene)
+            logger.info("Added %d edges from normal accounts to sar accounts" % num)
+
+        num = int(len(sar_candidates) * self.ratio_sar_to_normal)
+        if num > 0:
+            num_origs = len(normal_candidates)
+            print("Number of orig/bene candidates: %d/%d" % (len(sar_candidates), num_origs))
+            orig_list = random.choices(sar_candidates, k=num)
+            bene_list = random.choices(normal_candidates, k=num)
+            for i in range(num):
+                _orig = orig_list[i]
+                _bene = bene_list[i]
+                self.add_transaction(_orig, _bene)
+            logger.info("Added %d edges from sar accounts to normal accounts" % num)
 
     def check_account_exist(self, aid):
         """Validate an existence of a specified account. If absent, it raises KeyError.
@@ -380,7 +395,6 @@ class TransactionGenerator:
         start_range = get_positive_or_none(self.default_start_range)
         end_range = get_positive_or_none(self.default_end_range)
         default_model = self.default_model if self.default_model is not None else 1
-
         self.attr_names.extend(["first_name", "last_name", "street_addr", "city", "state", "zip",
                                 "gender", "phone_number", "birth_date", "ssn", "lon", "lat"])
 
@@ -515,12 +529,19 @@ class TransactionGenerator:
         g = directed_configuration_model(in_deg, out_deg, self.seed)
 
         logger.info("Add %d base transactions" % g.number_of_edges())
+        if self.isolated_aml:
+            sar_flags = nx.get_node_attributes(self.g, IS_SAR_KEY)
+
         nodes = self.g.nodes()
         for src_i, dst_i in g.edges():
             assert (src_i != dst_i)
             src = nodes[src_i]
             dst = nodes[dst_i]
-            self.add_transaction(src, dst)  # Add edges to transaction graph
+            if self.isolated_aml:
+                if (not sar_flags.get(src, False)) and (not sar_flags.get(dst, False)):
+                    self.add_transaction(src, dst)  # Add edges to transaction graph
+            else:
+                self.add_transaction(src, dst)  # Add edges to transaction graph
 
     def add_account(self, acct_id, init_balance, start, end, country, business, model_id, bank_id=None, **attr):
         """Add an account vertex
@@ -697,7 +718,7 @@ class TransactionGenerator:
         else:
             is_external = False
 
-        start_date = random.randrange(0, self.total_steps - period)
+        start_date = 0  # random.randrange(0, self.total_steps - period)
         end_date = start_date + period - 1
 
         # Create subgraph structure with transaction attributes
@@ -883,7 +904,6 @@ class TransactionGenerator:
                     margin = amount * self.margin_ratio  # Margin the beneficiary account can gain
                     amount = amount - margin  # max(amount - margin, min_amount)
                     count = count + 1
-                print("Length of random pattern: ", count)
 
         elif typology_name == "cycle":  # Cycle transactions
             amount = init_amount
@@ -935,15 +955,20 @@ class TransactionGenerator:
                 orig_bank_id = mid_bank_id = bene_bank_id = random.sample(self.get_all_bank_ids(), 1)[0]
 
             main_acct = orig_acct = random.sample(self.bank_to_accts[orig_bank_id], 1)[0]
+            main_acct = orig_acct = list(self.bank_to_accts[orig_bank_id])[0]
             self.remove_typology_candidate(orig_acct)
             add_node(orig_acct, orig_bank_id)
+
+            bene_acct = random.sample(self.bank_to_accts[bene_bank_id], 1)[0]
+            bene_acct = list(self.bank_to_accts[bene_bank_id])[0]
+            self.remove_typology_candidate(bene_acct)
+            add_node(bene_acct, bene_bank_id)
+
             mid_accts = random.sample(self.bank_to_accts[mid_bank_id], num_accounts - 2)
+            mid_accts = list(self.bank_to_accts[mid_bank_id])[:num_accounts - 2]
             for n in mid_accts:
                 self.remove_typology_candidate(n)
                 add_node(n, mid_bank_id)
-            bene_acct = random.sample(self.bank_to_accts[bene_bank_id], 1)[0]
-            self.remove_typology_candidate(bene_acct)
-            add_node(bene_acct, bene_bank_id)
 
             # The date of all scatter transactions must be performed before middle day
             mid_date = (start_date + end_date) // 2
@@ -1017,6 +1042,7 @@ class TransactionGenerator:
         if is_sar:
             for n in sub_g.nodes():
                 self.g.node[n][IS_SAR_KEY] = True
+                self.g.node[n]["model_id"] = 7
         self.alert_id += 1
 
     def write_account_list(self):
@@ -1129,7 +1155,6 @@ if __name__ == "__main__":
 
     _conf_file = argv[1]
     _sim_name = argv[2] if argc >= 3 else None
-    _ratio = float(argv[3]) if argc >= 4 else 0.0
 
     # Validation option for graph contractions
     deg_param = os.getenv("DEGREE")
@@ -1137,13 +1162,21 @@ if __name__ == "__main__":
 
     txg = TransactionGenerator(_conf_file, _sim_name)
     txg.load_account_list()  # Load account list CSV file
-    txg.generate_normal_transactions()  # Load a parameter CSV file for the base transaction types
+
+    if txg.isolated_aml:
+        txg.set_main_acct_candidates()  # Load a parameter CSV file for degrees of the base transaction graph
+        txg.load_alert_patterns()  # Load a parameter CSV file for AML typology subgraphs
+        # txg.generate_normal_transactions()  # Load a parameter CSV file for the base transaction types
+    else:
+        txg.generate_normal_transactions()  # Load a parameter CSV file for the base transaction types
+        txg.set_main_acct_candidates()  # Load a parameter CSV file for degrees of the base transaction graph
+        txg.load_alert_patterns()  # Load a parameter CSV file for AML typology subgraphs
+
     if degree_threshold > 0:
         logger.info("Generated normal transaction network")
         txg.count_fan_in_out_patterns(degree_threshold)
-    txg.set_main_acct_candidates()  # Load a parameter CSV file for degrees of the base transaction graph
-    txg.load_alert_patterns()  # Load a parameter CSV file for AML typology subgraphs
-    txg.add_normal_sar_edges(_ratio)
+
+    txg.add_normal_sar_edges()
 
     if degree_threshold > 0:
         logger.info("Added alert transaction patterns")

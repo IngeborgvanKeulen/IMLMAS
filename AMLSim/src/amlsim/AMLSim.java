@@ -207,7 +207,6 @@ public class AMLSim extends ParameterizedPaySim {
         this.counterFile = simProp.getCounterLogFile();
         this.diameterFile = simProp.getDiameterLogFile();
         this.computeDiameter = simProp.isComputeDiameter();
-
         if(computeDiameter && diameterFile != null){
             try{
                 BufferedWriter writer = new BufferedWriter(new FileWriter(diameterFile));

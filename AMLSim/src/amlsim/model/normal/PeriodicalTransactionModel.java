@@ -38,7 +38,10 @@ public class PeriodicalTransactionModel extends AbstractTransactionModel {
         }
 
         int totalCount = getNumberOfTransactions();  // Total number of transactions
-        int eachCount = (numDests < totalCount) ? 1 : numDests / totalCount;
+        int eachCount = 0;
+        if(totalCount != 0){
+            eachCount = (numDests < totalCount) ? 1 : numDests / totalCount;
+        }
 
         for(int i=0; i<eachCount; i++) {
             float amount = getTransactionAmount();  // this.balance;

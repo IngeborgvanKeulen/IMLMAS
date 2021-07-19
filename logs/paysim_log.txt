@@ -2,7 +2,7 @@ PAYSIM: Financial Simulator v1.0
  
 InInit  TagName:	1
 NrOfMerchants:	34749
-Seed:	1603810036599
+Seed:	1626585321061
 parameterFilePath	/home/ingeborg.local/Thesis/master_thesis/AMLSim//paramFiles//AggregateTransaction.csv
 
 Inputting this paramfile:
@@ -15,20 +15,20 @@ NrOfFraudsters:	50.0
 |	Indicator	|	Orig	|	Synth	|	Error Rate	|
 ---------------------------------------------------------------------------------------------------------
 |	NR OF TRANS	|		|		|			|
-|	CASH_IN		0.0	0.0	�		
-|	CASH_OT			0.0		0.0		�			
-|	TRANS		|	0.0		0.0		�			|
-|	PAYM		|	0.0	|	0	|	�			|
-|	DEB		|	0.0	|	0.0		|	�			|
+|	CASH_IN		0.0	0.0	NaN		
+|	CASH_OT			0.0		0.0		NaN			
+|	TRANS		|	0.0		0.0		NaN			|
+|	PAYM		|	0.0	|	0	|	NaN			|
+|	DEB		|	0.0	|	0.0		|	NaN			|
 ---------------------------------------------------------------------------------------------------------
 |	AVG TRANS SIZE	|			|			|				|
-|	CASH_IN		|	�	|	�	|	�			|
-|	CASH_OT		|	�	|	�	|	�			|
-|	TRANS		|	�	|	�	|	�			|
-|	PAYM		|	�	|	�	|	�			|
-|	DEB		|	�	|	�	|	�			|
+|	CASH_IN		|	NaN	|	NaN	|	NaN			|
+|	CASH_OT		|	NaN	|	NaN	|	NaN			|
+|	TRANS		|	NaN	|	NaN	|	NaN			|
+|	PAYM		|	NaN	|	NaN	|	NaN			|
+|	DEB		|	NaN	|	NaN	|	NaN			|
 ---------------------------------------------------------------------------------------------------------
-|	TOT ERR RATE	|			|			|	�			|
+|	TOT ERR RATE	|			|			|	NaN			|
 ---------------------------------------------------------------------------------------------------------
 
 

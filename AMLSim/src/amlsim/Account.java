@@ -68,7 +68,8 @@ public class Account extends Client implements Steppable {
 			case AbstractTransactionModel.MUTUAL: this.model = new MutualTransactionModel(); break;
 			case AbstractTransactionModel.FORWARD: this.model = new ForwardTransactionModel(); break;
 			case AbstractTransactionModel.PERIODICAL: this.model = new PeriodicalTransactionModel(); break;
-			default: System.err.println("Unknown model ID: " + modelID); this.model = new EmptyModel(); break;
+			default: this.model = new EmptyModel(); break;
+// 			default: System.err.println("Unknown model ID: " + modelID); this.model = new EmptyModel(); break;
 		}
 		this.model.setAccount(this);
 		this.model.setParameters(interval, initBalance, start, end);

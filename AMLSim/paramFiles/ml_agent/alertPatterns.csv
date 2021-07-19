@@ -1,2 +1,2 @@
 count,type,schedule_id,min_accounts,max_accounts,min_amount,max_amount,min_period,max_period,bank_id,is_sar
-1,scatter_gather,2,8,8,738500,738500,18,18,bank,True
+1,scatter_gather,2,7,7,7000,7000,1,1,bank,True

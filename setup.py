@@ -19,5 +19,3 @@ if __name__ == "__main__":
         include_package_data=True,
         test_suite="nose2.collector.collector",
     )
-
-# todo: fix setup.py
