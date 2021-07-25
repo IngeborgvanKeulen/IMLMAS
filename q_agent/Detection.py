@@ -2,13 +2,13 @@
 run_business_rules expects a transaction dataframe, sorted on index. The index is the paid_at date of the transaction.
 it should have the columns "amount" and "transaction_id"
 """
-import os
-import json
 import datetime
+import json
+import os
 import subprocess
-from typing import List, Optional
-
 from pathlib import Path
+from typing import List
+
 import numpy as np
 import pandas as pd
 
@@ -16,7 +16,7 @@ from br_engine.run_business_rules import main as run_business_rules
 from q_agent.process_alerts import main as process_alerts
 
 
-def transform_transactions(trx_path, output_path):
+def transform_transactions(trx_path: str, output_path: str):
     # Load in the transaction csv file
     transactions_df = pd.read_csv(os.path.join(trx_path, "transactions.csv"), header=0)
 
@@ -29,7 +29,6 @@ def transform_transactions(trx_path, output_path):
                                                       })
 
     # Set the paid_at column as the index and sort the dataframe based on this
-    # transactions_df["paid_at"]
     transactions_df.set_index("paid_at", inplace=True)
     transactions_df.sort_index(inplace=True)
 
@@ -77,7 +76,6 @@ def main(brs: List[int]) -> None:
     with open(conf_file, "r") as rf:
         conf = json.load(rf)
 
-    step = conf["step"]
     conf = conf["process_alerts"]
     process_alerts(conf=conf)
 
@@ -85,7 +83,7 @@ def main(brs: List[int]) -> None:
     os.system("rm -r ./output/*")
     bashCommand = "AMLSim/scripts/clean_logs.sh"
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE, cwd="../")
-    output, error = process.communicate()
+    _, _ = process.communicate()
 
 
 if __name__ == "__main__":

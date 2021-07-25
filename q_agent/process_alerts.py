@@ -1,14 +1,12 @@
 import glob
 import json
 import os
-import sys
 import pickle
+import sys
 import zipfile
-from typing import Dict, Set, Tuple, Union
-from csv import writer
-from datetime import datetime
-import numpy as np
+from typing import Dict, Set, Tuple
 
+import numpy as np
 import pandas as pd
 
 
@@ -32,7 +30,6 @@ def full_investigation(exp_trx_ids: pd.DataFrame, trx_ids: Set) -> Tuple[int, in
     trx_found = [alert_to_trx[alert_id] for alert_id in alerts_found]
     trx_found = set([item for sublist in trx_found for item in sublist])
 
-    # todo: there were also sar transactions in the file right? They should be tp even though we did not choose them
     # Calculate the false positive, true positive and false negative
     tp = len(trx_found)
     fp = len(trx_ids - trx_found)
@@ -41,7 +38,7 @@ def full_investigation(exp_trx_ids: pd.DataFrame, trx_ids: Set) -> Tuple[int, in
     return tp, fp, fn, trx_found
 
 
-def simple_investigation(exp_trx_ids: pd.DataFrame, trx_ids: Set) -> Union[int, int, int, Set]:
+def simple_investigation(exp_trx_ids: pd.DataFrame, trx_ids: Set) -> Tuple[int, int, int, Set]:
     """
     In this function we assume the investigation team performs a simple investigation. In other words, if the found
     transactions are not the transactions involving the main account, then the network is not found.
@@ -61,7 +58,8 @@ def simple_investigation(exp_trx_ids: pd.DataFrame, trx_ids: Set) -> Union[int, 
     return len(tp), len(fp), len(fn), trx_ids
 
 
-def get_performance_aml(conf, exp_trx_ids: pd.DataFrame, trx_ids: set) -> Union[Set, float, float, float]:
+def get_performance_aml(conf: Dict, exp_trx_ids: pd.DataFrame, trx_ids: set) -> \
+        Tuple[Set, float, float, float, int, int, int]:
     """
     Evaluate the performance of the AML method
 
@@ -75,7 +73,6 @@ def get_performance_aml(conf, exp_trx_ids: pd.DataFrame, trx_ids: set) -> Union[
     else:
         tp, fp, fn, trx_found = simple_investigation(exp_trx_ids, trx_ids)
 
-    # print("Number of false positives: ", fp)
     try:
         precision = tp / (tp + fp)
     except ZeroDivisionError:
@@ -91,16 +88,13 @@ def get_performance_aml(conf, exp_trx_ids: pd.DataFrame, trx_ids: set) -> Union[
     except ZeroDivisionError:
         f1_score = 0.0
 
-    # print("Precision: {}, Recall: {}, F1-score: {}".format(precision, recall, f1_score))
-
     return trx_found, precision, recall, f1_score, tp, fp, fn
 
 
-def get_feedback(alert_df: pd.DataFrame, trx_ids: set, main_df: pd.DataFrame) -> Tuple[Dict[str, Tuple[int, int]], int]:
+def get_feedback(alert_df: pd.DataFrame, trx_ids: set) -> Tuple[Dict[str, Tuple[int, int]], int]:
     """
     :param alert_df : the dataframe containing the sars
     :param trx_ids : the found transaction ids by the aml method
-    :param main_df: the info of the main accounts
 
     :return a dict with as key the typology and the value the reward, and the total prevented money
     """
@@ -114,9 +108,6 @@ def get_feedback(alert_df: pd.DataFrame, trx_ids: set, main_df: pd.DataFrame) ->
     for alert_type in typologies:
         # First find the maximum possible reward for each type
         subset = alert_df[alert_df["alert_type"] == alert_type]
-        main_acc = main_df[main_df["ALERT_ID"] == subset["alert_id"].values[0]]["MAIN_ACCOUNT_ID"]
-        # sender = sum(subset[subset["orig_acct"].isin([main_acc])]["base_amt"].values)
-        # receiver = sum(subset[subset["bene_acct"].isin([main_acc])]["base_amt"])
 
         received_pp = subset.groupby("bene_acct")["base_amt"].sum()
         send_pp = subset.groupby("orig_acct")["base_amt"].sum()
@@ -124,20 +115,11 @@ def get_feedback(alert_df: pd.DataFrame, trx_ids: set, main_df: pd.DataFrame) ->
             reward = max(send_pp)
         elif alert_type == "cycle":
             reward = min(received_pp)
+        else:
+            raise ValueError(f"alert_type of {alert_type} has not been implemented yet")
 
         total_prevented = reward if True in alert_df["found"].values else 0
         feedback[alert_type] = (reward - total_prevented, reward)
-
-        # # Now subtract all transactions that have been detected by the AML method
-        # field = "bene_acct"
-        # if reward == sender:
-        #     field = "orig_acct"
-        #
-        # # Don't fall for the == is the same as is, as it isn't
-        # prevented = sum(subset[(subset[field].isin([main_acc])) & (subset["found"] == True)]["base_amt"].values)
-        #
-        # feedback[alert_type] = (reward - prevented, reward)
-        # total_prevented += prevented
 
     return feedback, total_prevented
 
@@ -167,9 +149,6 @@ def get_data(conf: Dict) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.D
         trx_ids = set()
     else:
         trx_ids = set(trx_info["transaction_id"].values)
-    # if len(alert_df) > 0:
-    #     print("main acc: ", main_df["MAIN_ACCOUNT_ID"].values[0])
-    #     print("other acc: ", set(list(alert_df["orig_acct"]) + list(alert_df["bene_acct"])))
 
     return main_df, alert_df, trx_info, exp_trx_ids, trx_ids
 
@@ -187,19 +166,9 @@ def main(conf: Dict = None):
     trx_found, prec, rec, f1, tp, fp, fn = get_performance_aml(conf, exp_trx_ids, trx_ids)
 
     # Get feedback for the agent
-    feedback, prevented = get_feedback(alert_df, trx_found, main_df)
+    feedback, prevented = get_feedback(alert_df, trx_found)
     laundered = sum([x[0] for x in feedback.values()])
-    # print("Prevented money: {}, laundered money: {}".format(prevented, laundered))
 
-    # if (prevented == 0 and (rec != 0 or f1 != 0 or prec != 0)) or rec == 0.5:
-    #     print("SOMETHING IS WRONG with recall")
-    #     wrong_dir = os.path.join("./wrong_output", str(datetime.now()))
-    #     if not os.path.exists(wrong_dir):
-    #         os.makedirs(wrong_dir)
-    #     alert_df.to_csv(os.path.join(wrong_dir, "alert_df.csv"))
-    #     main_df.to_csv(os.path.join(wrong_dir, "main_df.csv"))
-    #     trx_info.to_csv(os.path.join(wrong_dir, "trx_info.csv"))
-    #
     if not os.path.exists(conf["result_path"]):
         os.makedirs(conf["result_path"])
 
@@ -207,27 +176,15 @@ def main(conf: Dict = None):
     file_exists = os.path.isfile(file_path)
 
     n_trx = len(pd.read_csv(conf["transactions_path"]))
+    use_columns = ["trx", "tp", "fp", "fn", "recall", "precision", "f1-score", "prevented", "laundered"]
     if not file_exists:
-        df = pd.DataFrame(np.array([[n_trx, tp, fp, fn, rec, prec, f1, prevented, laundered]]),
-                          columns=["trx", "tp", "fp", "fn", "recall", "precision", "f1-score", "prevented", "laundered"])
+        df = pd.DataFrame(np.array([[n_trx, tp, fp, fn, rec, prec, f1, prevented, laundered]]), columns=use_columns)
     else:
         df = pd.read_csv(file_path)
-        new_df = pd.DataFrame(np.array([[n_trx, tp, fp, fn, rec, prec, f1, prevented, laundered]]),
-                          columns=["trx", "tp", "fp", "fn", "recall", "precision", "f1-score", "prevented", "laundered"])
+        new_df = pd.DataFrame(np.array([[n_trx, tp, fp, fn, rec, prec, f1, prevented, laundered]]), columns=use_columns)
         df = df.append(new_df)
-        # df.loc[df["step"] == step, ["recall", "precision", "f1-score", "prevented", "laundered"]] = [rec, prec, f1, prevented, laundered]
 
     df.to_csv(file_path, index=False)
-
-    # with open(file_path, 'a+', newline='') as write_obj:
-    #     # Create a writer object from csv module
-    #     csv_writer = writer(write_obj)
-    #
-    #     if not file_exists:
-    #         csv_writer.writerow(["recall", "precision", "f1-score", "prevented", "laundered"])
-    #
-    #     # Add contents of list as last row in the csv file
-    #     csv_writer.writerow([rec, prec, f1, prevented, laundered])
 
     with open('feedback.pkl', 'wb') as handle:
         pickle.dump(feedback, handle, protocol=pickle.HIGHEST_PROTOCOL)

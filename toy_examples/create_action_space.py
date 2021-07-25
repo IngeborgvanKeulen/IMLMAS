@@ -58,7 +58,8 @@ def business_rule_3(amount: int, account: int, use_br: bool, threshold: int) -> 
         return False
 
 
-def create_action_space(params: Dict, div_amount: int, div_account: int, div_days: int, div_reward, brs: Dict) -> np.array:
+def create_action_space(params: Dict, div_amount: int, div_account: int, div_days: int, div_reward, brs: Dict)\
+        -> np.array:
     """
     Create the action space
 

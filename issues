@@ -1,8 +1,0 @@
-todo: fix better confs/method
-todo: fix prints
-todo: make conf / argument for the dir and archive file place
-todo: fix setup.py
-
-
-Note: the aml networks are isolated, but accounts in these networks can still have normal trx with each other
-This also implies for accounts in a transaction network, which perhaps should not happen

@@ -1,17 +1,16 @@
 import logging
 import os
 import random
-from datetime import datetime
 from typing import Dict, List, Tuple
 
 import numpy as np
 import pandas as pd
 import tensorflow as tf
 from sklearn import svm
+from sklearn.exceptions import NotFittedError
 from tensorflow import keras
 from tensorflow.keras.layers import Dense
 from tqdm import tqdm
-from sklearn.exceptions import NotFittedError
 
 from q_agent.Environment import BenchmarkEnvironment
 
@@ -38,6 +37,7 @@ class DQN:
         :param verbose: whether training output should be shown in the console
         """
         self.brs = brs
+
         # Build and compile the model
         self.model = keras.Sequential([
             Dense(hidden_dim, activation=tf.nn.leaky_relu, input_shape=[state_dim],
@@ -151,7 +151,6 @@ class DQN:
             next_days = [x[6] for x in batch]
 
             # Predict the q-values for the next states; calculate the rewards
-            # todo: norm possible to that day or in total
             next_states[:, 0] = next_states[:, 0] / (np.array(next_days) * 7000 * 13)
             states[:, 0] = states[:, 0] / (7000 * 13 * np.array(days))
             q_values_next = self.predict(next_states, use_target=True)
@@ -164,14 +163,12 @@ class DQN:
             self.update(states=states, targets=q_values, epochs=epochs)
         return memory
 
-    def run_learning(self, env: BenchmarkEnvironment, params: Dict)\
-            -> Tuple[List, List, pd.DataFrame]:
+    def run_learning(self, env: BenchmarkEnvironment, params: Dict) -> Tuple[List, List, pd.DataFrame]:
         """
         Use q-learning in the given environment.
 
         :param env: the simulation environment
         :param params: the parameters for the simulation
-        :param show_output: whether to show the plots during learning
         :return: the final rewards, days without being caught per episode and all taken actions
         """
         # Set the most used parameters
@@ -182,9 +179,7 @@ class DQN:
         memory = []
         final = []
         days_uncaught = []
-        df = pd.DataFrame([], columns=["episode", "eps_episode", "day", "state", "action",
-                                       "random", "reward", "next_state", "total"])
-        stretched_eps = 0
+        df = pd.DataFrame([])
 
         # Run for the given number of episodes
         for episode in tqdm(range(params["max_episodes"])):
@@ -192,28 +187,13 @@ class DQN:
             state = env.reset()
             total = 0
 
-            # Only start decreasing epsilon when learning has started
-            if len(memory) < params["replay_size"]:
-                stretched_eps += 1
-
-            if params["stretched"]:
-                ep = episode - stretched_eps
-                # Obtain epsilon for this episode
-                if params["eps_decay"] == "linear":
-                    eps_episode = max((0.01 - 1) * ep / params["e_episodes"] + 1, 0.01)
-                elif params["eps_decay"] == "annealing":
-                    eps_episode = max(pow(params["epsilon_factor"], ep), 0.01)
-                else:
-                    eps_episode = params["epsilon"]
-
+            # Obtain epsilon for this episode
+            if params["eps_decay"] == "linear":
+                eps_episode = max((0.01 - 1) * episode / params["e_episodes"] + 1, 0.01)
+            elif params["eps_decay"] == "annealing":
+                eps_episode = max(pow(params["epsilon_factor"], episode), 0.01)
             else:
-                # Obtain epsilon for this episode
-                if params["eps_decay"] == "linear":
-                    eps_episode = max((0.01 - 1) * episode / params["e_episodes"] + 1, 0.01)
-                elif params["eps_decay"] == "annealing":
-                    eps_episode = max(pow(params["epsilon_factor"], episode), 0.01)
-                else:
-                    eps_episode = params["epsilon"]
+                eps_episode = params["epsilon"]
 
             # Update the target model when using a separate one and n_update steps have passed
             if self.double and episode % params["n_update"] == 0:
@@ -222,7 +202,6 @@ class DQN:
             day = 0
             # Run for the maximum number of days
             while day < max_days:
-
                 # Either explore or exploit
                 if random.random() < eps_episode or len(memory) < params["replay_size"]:
                     # The taken action is random
@@ -242,12 +221,13 @@ class DQN:
                     # Find the best action
                     norm_state = state.copy()
                     if day != 0:
-                        # todo: how to do norm
                         norm_state = norm_state / [env.div_amount * 13 * day, 1]
                     q_values = self.predict(state=norm_state, use_target=False)
                     action = np.argmax(q_values)
+
                     # In case this action is invalid, find the next-best action that is valid
-                    while round(state[-1] * env.max_days) + round(env.action_space[action][-1] * env.div_days) > max_days:
+                    while round(state[-1] * env.max_days) + round(
+                            env.action_space[action][-1] * env.div_days) > max_days:
                         q_values[0][action] = -1
                         action = np.argmax(q_values)
                         if max(q_values[0]) == -1:
@@ -256,15 +236,12 @@ class DQN:
                 # Perform the chosen action
                 next_state, reward, done = env.step(brs=self.brs, state=state, action=action)
 
-                if round(next_state[-1] * env.max_days) == day:
-                    raise ValueError("Day did not change")
                 # When the current day is the max number of days (or greater than), then the game is over
                 day = round(next_state[-1] * env.max_days)
                 if day >= max_days:
                     done = True
                     if day > max_days:
                         reward = 0
-                        raise ValueError("Days surpass max")
 
                 # Update the total rewards; add experience to the memory; obtain q_values for the current state
                 total += reward if reward > 0 else 0
@@ -288,17 +265,6 @@ class DQN:
                                 "reward": reward,
                                 "next_state": next_state * [env.div_amount * env.div_account * day, env.max_days],
                                 "total": total}, ignore_index=True)
-                if len(df) > 1:
-                    if reward < 0:
-                        if df["action"].iloc[-1][0] == 0:
-                            print(df)
-                            raise ValueError("AMOUNT IS ZERO BUT REWARD NEGATIVE")
-                        elif self.brs == [4]:
-                            if df["episode"].iloc[-2] == df["episode"].iloc[-1]:
-                                if df["action"].iloc[-1][0] * (df["action"].iloc[-1][1] - 2) < 40000:
-                                    if df["action"].iloc[-2][0] == 0:
-                                        print(df)
-                                        raise ValueError("ACCORDING TO BR 4 SHOULD BE FINE")
 
                 if done:
                     # The run is done, so optionally train on the last sample and then break
@@ -351,10 +317,9 @@ class BootstrapDQN:
         :param verbose: whether training output should be shown in the console
         """
         self.brs = brs
+        # reload_path can be set such that it reloads weights from a previous experiment (for example: "./head_0.h5")
         reload_path = None
-        # reload_path = "/home/ingeborg.local/Thesis/FINAL_RESULTS/Experiments/Experiment_4/BOOT/business_rule_4/3_days/setting_1000_2/head_0.h5"
 
-        # todo: need seed?
         self.random_state = np.random.RandomState()
 
         # Build and compile the model
@@ -400,16 +365,13 @@ class BootstrapDQN:
                                              metrics=['mae', 'mse'])
                 self.target_update(idx=i)
 
-    def store_heads(self, path):
+    def store_heads(self, path: str):
         """
         Store the training models to the given path
         :param path: path where models should be stored
         """
         for idx, model in enumerate(self.heads):
             model.save(os.path.join(path, f"head_{idx}.h5"))
-
-        ## It can be used to reconstruct the model identically
-        # reconstructed_model = keras.models.load_model("my_h5_model.h5")
 
     def update(self, states: tf.Tensor, targets: tf.Tensor, epochs: int, idx: int):
         """
@@ -482,7 +444,6 @@ class BootstrapDQN:
             days = [x[6] for x in batch]
             next_days = [x[7] for x in batch]
 
-            # todo: how to do norm
             next_states[:, 0] = next_states[:, 0] / (np.array(next_days) * 7000 * 13)
             states[:, 0] = states[:, 0] / (7000 * 13 * np.array(days))
 
@@ -517,8 +478,7 @@ class BootstrapDQN:
         :param params: the parameters for the simulation
         :return: the final rewards and days without being caught per episode
         """
-        df = pd.DataFrame([], columns=["episode", "head", "eps_episode", "day", "state", "action",
-                                       "random", "reward", "next_state", "total"])
+        df = pd.DataFrame([])
         # Set the most used parameters
         epochs = params["epochs"]
 
@@ -526,40 +486,23 @@ class BootstrapDQN:
         memory = []
         final = []
         days_uncaught = []
-        stretched_eps = 0
 
         # Run for the given number of episodes
         for episode in tqdm(range(params["max_episodes"])):
-
             # Reset state
             state = env.reset()
             total = 0
             head_idx = random.randint(0, len(self.heads) - 1)
 
-            # Only start decreasing epsilon when learning has started
-            if len(memory) < params["replay_size"]:
-                stretched_eps += 1
-
-            if params["stretched"]:
-                ep = episode - stretched_eps
-                # Obtain epsilon for this episode
-                if params["eps_decay"] == "linear":
-                    eps_episode = max((0.01 - 1) * ep / params["e_episodes"] + 1, 0.01)
-                elif params["eps_decay"] == "annealing":
-                    eps_episode = max(pow(params["epsilon_factor"], ep), 0.01)
-                else:
-                    eps_episode = params["epsilon"]
-
+            # Obtain epsilon for this episode
+            if params["eps_decay"] == "linear":
+                eps_episode = 0
+                if params["e_episodes"] >= 1:
+                    eps_episode = max((0.01 - 1) * episode / params["e_episodes"] + 1, 0.01)
+            elif params["eps_decay"] == "annealing":
+                eps_episode = max(pow(params["epsilon_factor"], episode), 0.01)
             else:
-                # Obtain epsilon for this episode
-                if params["eps_decay"] == "linear":
-                    eps_episode = 0
-                    if params["e_episodes"] >= 1:
-                        eps_episode = max((0.01 - 1) * episode / params["e_episodes"] + 1, 0.01)
-                elif params["eps_decay"] == "annealing":
-                    eps_episode = max(pow(params["epsilon_factor"], episode), 0.01)
-                else:
-                    eps_episode = params["epsilon"]
+                eps_episode = params["epsilon"]
 
             # Update the target model when using a separate one and n_steps have passed
             if self.double and episode % params["n_update"] == 0:
@@ -584,7 +527,6 @@ class BootstrapDQN:
                     # Find the best action
                     norm_state = state.copy()
                     if day != 0:
-                        # todo: how to do norm
                         norm_state = norm_state / [env.div_amount * 13 * day, 1]
                     norm_state = tf.convert_to_tensor(norm_state.reshape(1, -1))
                     q_values = self.predict(state=norm_state, idx=head_idx, use_target=False).numpy()
@@ -603,13 +545,10 @@ class BootstrapDQN:
                 # Perform the chosen action; if this is the last day then done should be set to True
                 next_state, reward, done = env.step(brs=self.brs, state=state, action=action)
 
-                if round(next_state[-1] * env.max_days) == day:
-                    raise ValueError("Day did not change")
                 day = round(next_state[-1] * env.max_days)
                 if day == params["max_days"]:
                     done = True
                 elif day > params["max_days"]:
-                    raise ValueError("Surpass max days")
                     done = True
                     reward = 0
 
@@ -640,18 +579,6 @@ class BootstrapDQN:
                                 "next_state": next_state * [1, env.max_days],
                                 "total": total}, ignore_index=True)
 
-                if len(df) > 1:
-                    if reward < 0:
-                        if df["action"].iloc[-1][0] == 0:
-                            print(df)
-                            raise ValueError("AMOUNT IS ZERO BUT REWARD NEGATIVE")
-                        elif self.brs == [4]:
-                            if df["episode"].iloc[-2] == df["episode"].iloc[-1]:
-                                if df["action"].iloc[-1][0] * (df["action"].iloc[-1][1] - 2) < 40000:
-                                    if df["action"].iloc[-2][0] == 0:
-                                        print(df)
-                                        raise ValueError("ACCORDING TO BR 4 SHOULD BE FINE")
-
                 if done:
                     # The run is done, so optionally train on the last sample and then break
                     if not params["replay"]:
@@ -665,7 +592,6 @@ class BootstrapDQN:
 
                 if params["replay"]:
                     # Train the model by replaying a batch of the memory
-                    # todo: train every model or only current one?
                     memory = self.replay(memory=memory, size=params["replay_size"], gamma=params["gamma"],
                                          epochs=epochs, finite=params["finite"], sample_method=params["sampling"],
                                          prio_buffer=params["prio_buffering"])

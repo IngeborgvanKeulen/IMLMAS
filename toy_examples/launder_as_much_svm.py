@@ -2,14 +2,12 @@ import json
 import logging
 import os
 import random
-from argparse import ArgumentParser, Namespace
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from mpire import WorkerPool
 from sklearn import svm
 from tqdm import tqdm
 
@@ -223,7 +221,6 @@ def run_learning(env: BenchmarkEnvironment, model: SVM, params: Dict, show_outpu
         state = env.reset()
         total = 0
 
-        # Todo: before 12/04 linear and annealing were swapped
         # Obtain epsilon for this episode
         if params["eps_decay"] == "linear":
             eps_episode = 0
@@ -399,7 +396,7 @@ def single_run():
             "div_amount": 7000,
             "div_account": 15,
             "div_days": 3,
-            "div_reward": (15-2) * 7000,
+            "div_reward": (15 - 2) * 7000,
             "brs": {
                 1: {
                     "use_br": True,
@@ -427,146 +424,25 @@ def single_run():
         },
         "simulation": {
             "type": "scatter-gather",
-            "episodes": 1000,
+            "e_episodes": 1,
+            "max_episodes": 1,
             "prio_buffering": True,
             "finite": 30000,
             "replay": True,
             "epsilon": .1,
             "epsilon_factor": 0.998,
             "eps_decay": "annealing",
-            "goal": 5000 * 3 * (15-2),
+            "goal": 5000 * 3 * (15 - 2),
             "max_days": 3,
             "title": "Launder as much as possible",
         },
-        "file_path": "./results/thesis/SVM/",
+        "file_path": "./results/test_toy_svm/",
     }
     run_experiment(params=parameters)
 
 
-def parameter_sweep(args: Namespace):
-    """
-    This function runs the simulation for all different parameter settings in todo_params.
-    At the end all simulation are evaluated by looking at the last 50 games.
-
-    :param args: the jobs and cpu ids arguments
-    """
-    todo_params = []
-    for e_epi, max_epi in [(100, 2500), (500, 2500), (1000, 2500)]:
-        for repeat in [1]:
-            for use_br1, use_br3 in [(True, False)]:
-                todo_params.append([{
-                    "model": {
-                        "kernel": "rbf",
-                        "regularization": 1000,
-                        "tol": 1e-3,
-                        "gamma": "scale",
-                    },
-                    "environment": {
-                        "div_amount": 7000,
-                        "div_account": 15,
-                        "div_days": 3,
-                        "div_reward": (15-2) * 7000,
-                        "brs": {
-                            1: {
-                                "use_br": use_br1,
-                                "threshold": 5000
-                            },
-                            2: {
-                                "use_br": False,
-                                "threshold": 7
-                            },
-                            3: {
-                                "use_br": use_br3,
-                                "threshold": 22000
-                            }
-                        }
-                    },
-                    "action_space": {
-                        "success": 1,
-                        "caught": 0,
-                        "min_amount": 0,
-                        "step_amount": 1000,
-                        "min_account": 4,
-                        "step_account": 1,
-                        "min_days": 1,
-                        "step_days": 1,
-                    },
-                    "simulation": {
-                        "type": "scatter-gather",
-                        "max_episodes": max_epi,
-                        "e_episodes": e_epi,
-                        "prio_buffering": True,
-                        "finite": 30000,
-                        "replay": True,
-                        "epsilon": .1,
-                        "epsilon_factor": 0.998,
-                        "eps_decay": "linear",
-                        "goal": 5000 * 3 * (15-2),
-                        "max_days": 3,
-                        "title": "Launder as much as possible",
-                    },
-                    "file_path": f"../../FINAL_RESULTS/Experiments/Experiment_1/business_rule_{1 if use_br1 else 3}/SVM/{max_epi}_{e_epi}/",
-                }])
-
-    # Run the settings in parallel
-    with WorkerPool(cpu_ids=args.cpu_ids, n_jobs=args.n_jobs) as wp:
-        wp.map(run_experiment, todo_params, progress_bar=True)
-
-    # Evaluate all results
-    parameters = todo_params[-1][0]
-    dirs = os.listdir(parameters["file_path"])
-    df = pd.DataFrame([])
-    for file_dir in dirs:
-        if file_dir.endswith("csv"):
-            continue
-        # Get the parameters for this specific simulation
-        params = pd.read_json(os.path.join(parameters["file_path"], file_dir, "params.json"), orient="index")
-        new_df = params.loc["simulation"]
-        new_df = new_df.append(pd.Series([file_dir], index=["file"]))
-        new_df = new_df.dropna()
-
-        # Get the rewards obtained per game and calculate the mean and std for the last 50 games
-        results = pd.read_csv(os.path.join(parameters["file_path"], file_dir, "action_states.csv"))
-        total = results.drop_duplicates(subset=["episode"], keep="last")["total"]
-        new_df["average"] = np.mean(total[-50:])
-        new_df["deviation"] = np.std(total[-50:])
-        new_df = pd.DataFrame(new_df).T
-        new_df = new_df.set_index("file")
-
-        # Combine the information in one single file
-        df = pd.concat([df, new_df])
-    df.to_csv(os.path.join(parameters["file_path"], "evaluation.csv"))
-
-
-def parse_args():
-    """
-    Parse command line interface (CLI) arguments.
-
-    :return: CLI arguments
-    """
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--n-jobs",
-        type=int,
-        required=True,
-    )
-
-    parser.add_argument(
-        "--cpu-ids",
-        nargs='+',
-        default=[],
-    )
-
-    args = parser.parse_args()
-    args.cpu_ids = [int(i) for i in args.cpu_ids]
-    args.cpu_ids = [i for i in range(args.cpu_ids[0], args.cpu_ids[1] + 1)]
-    return args
-
-
 def main():
-    args = parse_args()
-    # single_run()
-    parameter_sweep(args=args)
+    single_run()
 
 
 if __name__ == "__main__":

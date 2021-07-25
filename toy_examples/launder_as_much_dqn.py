@@ -2,7 +2,6 @@ import json
 import logging
 import os
 import random
-from argparse import ArgumentParser, Namespace
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
@@ -10,7 +9,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from mpire import WorkerPool
 from tensorflow import keras
 from tensorflow.keras.layers import Dense
 from tqdm import tqdm
@@ -23,7 +21,7 @@ logging.basicConfig(level=logging.INFO)
 
 class BenchmarkEnvironment:
     def __init__(self, action_space: np.array, div_amount: int, div_account: int, div_days: int,
-                 div_reward: int, brs: Dict, max_days: int, type: "str", **kwargs):
+                 div_reward: int, max_days: int, type: str, **kwargs):
         """
         Initialize the environment
 
@@ -50,7 +48,7 @@ class BenchmarkEnvironment:
 
         :return: the start state
         """
-        return np.array([0 / self.div_amount, 0 / self.div_account, 0 / self.max_days])
+        return np.array([0 / self.div_amount, 0 / self.max_days])
 
     def step(self, state: np.array, action: int):
         """
@@ -62,20 +60,19 @@ class BenchmarkEnvironment:
         """
         # Set the defaults
         done = False
-        reward = 0
 
         # Get the next state that is obtained by doing action in the current state
         next_state = np.copy(state)
         next_state[0] = np.copy(self.action_space[action][0])
-        next_state[1] = np.copy(self.action_space[action][1])
-        next_state[2] += int(np.copy(self.action_space[action][2]) * self.div_days) / self.max_days
+        next_state[1] += int(np.copy(self.action_space[action][2]) * self.div_days) / self.max_days
 
         # Perform the AML detection method
         if self.actions_and_results[action][-1] == 0:
             done = True
+            reward = -10000
         else:
             if self.type == "scatter-gather":
-                reward = self.action_space[action][0] * self.div_amount *\
+                reward = self.action_space[action][0] * self.div_amount * \
                          ((self.action_space[action][1] * self.div_account) - 2)
             else:
                 reward = self.action_space[action][0] * self.div_amount * \
@@ -90,7 +87,7 @@ class DQN:
     """
 
     def __init__(self, state_dim: int, action_dim: int, hidden_dim: int,
-                 loss: str, learning_rate: float, double: bool, verbose=0):
+                 loss: str, learning_rate: float, double: bool, verbose=0, **kwargs):
         """
         Initialize the Deep Q Neural Network
 
@@ -101,15 +98,14 @@ class DQN:
         :param double: whether two models, one for training and one for predicting, should be used
         :param verbose: whether training output should be shown in the console
         """
-        # todo: optimistic weight initialization?
         # Build and compile the model
         self.model = keras.Sequential([
             Dense(hidden_dim, activation=tf.nn.leaky_relu, input_shape=[state_dim],
-                  kernel_initializer=tf.initializers.random_uniform(minval=0, maxval=1)),
+                  kernel_initializer=tf.initializers.random_uniform(minval=1, maxval=10)),
             Dense(hidden_dim * 2, activation=tf.nn.leaky_relu,
-                  kernel_initializer=tf.initializers.random_uniform(minval=0, maxval=1)),
+                  kernel_initializer=tf.initializers.random_uniform(minval=1, maxval=10)),
             Dense(action_dim, activation=keras.activations.linear,
-                  kernel_initializer=tf.initializers.random_uniform(minval=0, maxval=1)),
+                  kernel_initializer=tf.initializers.random_uniform(minval=1, maxval=10)),
         ])
         self.model.compile(optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
                            loss=loss,
@@ -123,11 +119,11 @@ class DQN:
             # When using two models, then the target model should be a copy of the normal model
             self.target = keras.Sequential([
                 Dense(hidden_dim, activation=tf.nn.leaky_relu, input_shape=[state_dim],
-                      kernel_initializer=tf.initializers.random_uniform(minval=0, maxval=1)),
+                      kernel_initializer=tf.initializers.random_uniform(minval=1, maxval=10)),
                 Dense(hidden_dim * 2, activation=tf.nn.leaky_relu,
-                      kernel_initializer=tf.initializers.random_uniform(minval=0, maxval=1)),
+                      kernel_initializer=tf.initializers.random_uniform(minval=1, maxval=10)),
                 Dense(action_dim, activation=keras.activations.linear,
-                      kernel_initializer=tf.initializers.random_uniform(minval=0, maxval=1)),
+                      kernel_initializer=tf.initializers.random_uniform(minval=1, maxval=10)),
             ])
             self.target.compile(optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
                                 loss=loss,
@@ -206,13 +202,17 @@ class DQN:
                 batch = random.sample(memory, size)
 
             # Extract information from the data
-            states = [x[0] for x in batch]
+            states = np.array([x[0] for x in batch])
             actions = [x[1] for x in batch]
-            next_states = [x[2] for x in batch]
+            next_states = np.array([x[2] for x in batch])
             rewards = [x[3] for x in batch]
             not_dones = [float(not x[4]) for x in batch]
+            days = [x[5] for x in batch]
+            next_days = [x[6] for x in batch]
 
             # Predict the q-values for the next states; calculate the rewards
+            next_states[:, 0] = next_states[:, 0] / (np.array(next_days) * 7000 * 13)
+            states[:, 0] = states[:, 0] / (7000 * 13 * np.array(days))
             q_values_next = self.predict(next_states, use_target=True)
             rewards = rewards + gamma * np.max(q_values_next, axis=1) * not_dones
 
@@ -282,36 +282,20 @@ def run_q_learning(env: BenchmarkEnvironment, model: DQN, params: Dict, show_out
     days_uncaught = []
     df = pd.DataFrame([], columns=["episode", "eps_episode", "day", "state", "action",
                                    "random", "reward", "next_state", "total"])
-    stretched_eps = 0
 
     # Run for the given number of episodes
-    for episode in tqdm(range(params["episodes"])):
+    for episode in tqdm(range(params["max_episodes"])):
         # Reset the environment
         state = env.reset()
         total = 0
 
-        # Only start decreasing epsilon when learning has started
-        if len(memory) < params["replay_size"]:
-            stretched_eps += 1
-
-        if params["stretched"]:
-            ep = episode - stretched_eps
-            # Obtain epsilon for this episode
-            if params["eps_decay"] == "linear":
-                eps_episode = max((0.01 - 1) * ep / (0.9 * params["episodes"]) + 1, 0.01)
-            elif params["eps_decay"] == "annealing":
-                eps_episode = max(pow(params["epsilon_factor"], ep), 0.01)
-            else:
-                eps_episode = params["epsilon"]
-
+        # Obtain epsilon for this episode
+        if params["eps_decay"] == "linear":
+            eps_episode = max((0.01 - 1) * episode / params["e_episodes"] + 1, 0.01)
+        elif params["eps_decay"] == "annealing":
+            eps_episode = max(pow(params["epsilon_factor"], episode), 0.01)
         else:
-            # Obtain epsilon for this episode
-            if params["eps_decay"] == "linear":
-                eps_episode = max((0.01 - 1) * episode / (0.9 * params["episodes"]) + 1, 0.01)
-            elif params["eps_decay"] == "annealing":
-                eps_episode = max(pow(params["epsilon_factor"], episode), 0.01)
-            else:
-                eps_episode = params["epsilon"]
+            eps_episode = params["epsilon"]
 
         # Update the target model when using a separate one and n_update steps have passed
         if model.double and episode % params["n_update"] == 0:
@@ -330,8 +314,7 @@ def run_q_learning(env: BenchmarkEnvironment, model: DQN, params: Dict, show_out
                 valid = int(state[-1] * env.max_days) + env.action_space[:, -1] * env.div_days
                 options = np.arange(len(env.action_space))[valid <= max_days]
                 if len(options) == 0:
-                    print("No options available (should be impossible)")
-                    break
+                    raise ValueError("No options available (should be impossible)")
                 action = random.choice(options)
 
             else:
@@ -339,7 +322,10 @@ def run_q_learning(env: BenchmarkEnvironment, model: DQN, params: Dict, show_out
                 is_random = False
 
                 # Find the best action
-                q_values = model.predict(state=state, use_target=False)
+                norm_state = state.copy()
+                if day != 0:
+                    norm_state = norm_state / [env.div_amount * env.div_account * day, 1]
+                q_values = model.predict(state=norm_state, use_target=False)
                 action = np.argmax(q_values)
                 # In case this action is invalid, find the next-best action that is valid
                 while int(state[-1] * env.max_days) + int(env.action_space[action][-1] * env.div_days) > max_days:
@@ -359,20 +345,31 @@ def run_q_learning(env: BenchmarkEnvironment, model: DQN, params: Dict, show_out
                     reward = 0
 
             # Update the total rewards; add experience to the memory; obtain q_values for the current state
-            total += reward
-            memory.append((state, action, next_state, reward, done))
-            q_values = model.predict(state=state, use_target=False)
+            total += reward if reward > 0 else 0
+            next_state[0] = total
+            cur_day = int(state[-1] * env.max_days)
+            memory.append((state, action, next_state, reward, done, cur_day if cur_day != 0 else 1, day))
+            if not params["replay"]:
+                q_values = model.predict(
+                    state=state / [env.div_amount * env.div_account * int(state[-1] * env.max_days), 1],
+                    use_target=False)
 
             # Add the current action and context information to the dataframe
             df = df.append({"episode": episode,
                             "eps_episode": eps_episode,
                             "day": day,
-                            "state": state * [env.div_amount, env.div_account, env.max_days],
+                            "state": state,
                             "action": env.action_space[action] * [env.div_amount, env.div_account, env.div_days],
                             "random": is_random,
                             "reward": reward,
-                            "next_state": next_state * [env.div_amount, env.div_account, env.max_days],
+                            "next_state": next_state,
                             "total": total}, ignore_index=True)
+
+            if len(df) > 1:
+                if reward < 0:
+                    if df["action"].iloc[-1][0] == 0:
+                        print(df)
+                        raise ValueError("AMOUNT IS ZERO BUT REWARD NEGATIVE")
 
             if done:
                 # The run is done, so optionally train on the last sample and then break
@@ -461,7 +458,8 @@ def run_experiment(params: Dict[str, Dict]):
     action_space = create_action_space(params=params["action_space"], **params["environment"])
     env = BenchmarkEnvironment(action_space=action_space, **params["environment"],
                                max_days=params["simulation"]["max_days"], type=params["simulation"]["type"])
-    model = DQN(action_dim=env.action_space.shape[0], state_dim=env.action_space.shape[1], **params["model"], verbose=0)
+    model = DQN(action_dim=env.action_space.shape[0], state_dim=env.action_space.shape[1] - 1, **params["model"],
+                verbose=0)
 
     # Run the simulation
     final, days, df = run_q_learning(env=env, model=model, params=params["simulation"], show_output=False)
@@ -492,16 +490,16 @@ def single_run():
             "div_reward": 1,
             "brs": {
                 1: {
-                    "use_br": True,
+                    "use_br": False,
                     "threshold": 5000
                 },
                 2: {
-                    "use_br": False,
-                    "threshold": 5
+                    "use_br": True,
+                    "threshold": 7
                 },
                 3: {
-                    "use_br": False,
-                    "threshold": 30000
+                    "use_br": True,
+                    "threshold": 22000
                 }
             }
         },
@@ -517,159 +515,30 @@ def single_run():
         },
         "simulation": {
             "type": "scatter-gather",
-            "episodes": 1000,
+            "max_episodes": 1,
+            "e_episodes": 1,
             "sampling": "max_rewards",
             "prio_buffering": True,
             "finite": 500,
             "replay": True,
             "replay_size": 100,
             "n_update": 10,
-            "stretched": False,
             "epsilon": .1,
             "epsilon_factor": 0.998,
             "eps_decay": "linear",
             "epochs": 150,
             "gamma": 0.99,
-            "goal": 5000 * 3 * (15-2),
+            "goal": 5000 * 3 * (15 - 2),
             "max_days": 3,
             "title": "Launder as much as possible",
         },
-        "file_path": "./results/thesis/dqn/",
+        "file_path": "./results/test_toy_dqn/",
     }
     run_experiment(params=parameters)
 
 
-def parameter_sweep(args: Namespace):
-    """
-    This function runs the simulation for all different parameter settings in todo_params.
-    At the end all simulation are evaluated by looking at the last 50 games.
-
-    :param args: the jobs and cpu ids arguments
-    """
-    todo_params = []
-    for epi in [1000, 1500]:
-        for size in [100]:
-            for update in [10]:
-                for epochs in [150]:
-                    for repeat in [1, 2]:
-                        todo_params.append([{
-                            "model": {
-                                "loss": "mse",
-                                "learning_rate": 0.05,
-                                "hidden_dim": 128,
-                                "double": True,
-                            },
-                            "environment": {
-                                "div_amount": 7000,
-                                "div_account": 15,
-                                "div_days": 3,
-                                "div_reward": 1,
-                                "brs": {
-                                    1: {
-                                        "use_br": True,
-                                        "threshold": 5000
-                                    },
-                                    2: {
-                                        "use_br": False,
-                                        "threshold": 5
-                                    },
-                                    3: {
-                                        "use_br": False,
-                                        "threshold": 30000
-                                    }
-                                }
-                            },
-                            "action_space": {
-                                "success": 1,
-                                "caught": 0,
-                                "min_amount": 0,
-                                "step_amount": 1000,
-                                "min_account": 4,
-                                "step_account": 1,
-                                "min_days": 1,
-                                "step_days": 1,
-                            },
-                            "simulation": {
-                                "type": "scatter-gather",
-                                "episodes": epi,
-                                "sampling": "max_rewards",
-                                "prio_buffering": True,
-                                "finite": 500,
-                                "replay": True,
-                                "replay_size": size,
-                                "n_update": update,
-                                "stretched": False,
-                                "epsilon": .1,
-                                "epsilon_factor": 0.998,
-                                "eps_decay": "linear",
-                                "epochs": epochs,
-                                "gamma": 0.99,
-                                "goal": 5000 * 3 * (15-2),
-                                "max_days": 3,
-                                "title": "Launder as much as possible",
-                            },
-                            "file_path": "./results/thesis/dqn/",
-                        }])
-
-    # Run the settings in parallel
-    with WorkerPool(cpu_ids=args.cpu_ids, n_jobs=args.n_jobs) as wp:
-        wp.map(run_experiment, todo_params, progress_bar=True)
-
-    # Evaluate all results
-    parameters = todo_params[-1][0]
-    dirs = os.listdir(parameters["file_path"])
-    df = pd.DataFrame([])
-    for file_dir in dirs:
-        if file_dir.endswith("csv"):
-            continue
-        # Get the parameters for this specific simulation
-        params = pd.read_json(os.path.join(parameters["file_path"], file_dir, "params.json"), orient="index")
-        new_df = params.loc["simulation"]
-        new_df = new_df.append(pd.Series([file_dir], index=["file"]))
-        new_df = new_df.dropna()
-
-        # Get the rewards obtained per game and calculate the mean and std for the last 50 games
-        results = pd.read_csv(os.path.join(parameters["file_path"], file_dir, "action_states.csv"))
-        total = results.drop_duplicates(subset=["episode"], keep="last")["total"]
-        new_df["average"] = np.mean(total[-50:])
-        new_df["deviation"] = np.std(total[-50:])
-        new_df = pd.DataFrame(new_df).T
-        new_df = new_df.set_index("file")
-
-        # Combine the information in one single file
-        df = pd.concat([df, new_df])
-    df.to_csv(os.path.join(parameters["file_path"], "evaluation.csv"))
-
-
-def parse_args():
-    """
-    Parse command line interface (CLI) arguments.
-
-    :return: CLI arguments
-    """
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--n-jobs",
-        type=int,
-        required=True,
-    )
-
-    parser.add_argument(
-        "--cpu-ids",
-        nargs='+',
-        default=[],
-    )
-
-    args = parser.parse_args()
-    args.cpu_ids = [int(i) for i in args.cpu_ids]
-    args.cpu_ids = [i for i in range(args.cpu_ids[0], args.cpu_ids[1] + 1)]
-    return args
-
-
 def main():
-    args = parse_args()
-    # single_run()
-    parameter_sweep(args=args)
+    single_run()
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-fintel-engine
 pygraphviz
 networkx==1.11
 powerlaw
@@ -7,4 +6,5 @@ tensorflow
 pandas>=1.1.0
 scikit-learn
 tqdm
-
+numpy
+matplotlib

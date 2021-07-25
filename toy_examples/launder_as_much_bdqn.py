@@ -2,15 +2,13 @@ import json
 import logging
 import os
 import random
-from argparse import ArgumentParser
 from datetime import datetime
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from mpire import WorkerPool
 from tensorflow import keras
 from tensorflow.keras.layers import Dense
 from tqdm import tqdm
@@ -22,7 +20,8 @@ logging.basicConfig(level=logging.INFO)
 
 
 class BenchmarkEnvironment:
-    def __init__(self, action_space, div_amount, div_account, div_days, div_reward, brs, max_days, type):
+    def __init__(self, action_space: np.array, div_amount: int, div_account: int, div_days: int,
+                 div_reward: int, max_days: int, type: str, **kwargs):
         """
         Initialize the environment
 
@@ -51,7 +50,7 @@ class BenchmarkEnvironment:
         """
         return np.array([0 / self.div_amount, 0 / self.max_days])
 
-    def step(self, state, action):
+    def step(self, state: np.array, action: int):
         """
         Perform the action and return the results of doing this action
 
@@ -61,16 +60,12 @@ class BenchmarkEnvironment:
         """
         # Set the defaults
         done = False
-        reward = 0
 
         # Get the next state that is obtained by doing action in the current state
         next_state = np.copy(state)
         next_state[0] = np.copy(self.action_space[action][0])
-        # todo: 07/07 test this
         next_state[1] += self.action_space[action][2]
-        # next_state[1] += round(np.copy(self.action_space[action][2]) * self.div_days) / self.max_days
 
-        # todo: make this less hardcoded
         # Perform the AML detection method
         if self.actions_and_results[action][-1] == 0:
             done = True
@@ -99,10 +94,9 @@ class BootstrapDQN:
         :param double: whether two models, one for training and one for predicting, should be used
         :param verbose: whether training output should be shown in the console
         """
+        # reload_path can be set such that it reloads weights from a previous experiment (for example: "./head_0.h5")
         reload_path = None
-        # reload_path = "./head_0.h5"
-        # reload_path = "/home/ingeborg.local/Thesis/FINAL_RESULTS/Experiments/Experiment_4/BOOT/business_rule_2/3_days/episodes_1500_heads_10_prob_0.5/setting_1000_14/head_0.h5"
-        # todo: need seed?
+
         self.random_state = np.random.RandomState()
 
         # Build and compile the model
@@ -149,13 +143,7 @@ class BootstrapDQN:
                                              metrics=['mae', 'mse'])
                 self.target_update(idx=i)
 
-    def store_single_head(self, path, epoch):
-        model = self.heads[0]
-        weights = model.get_weights()
-        with open(os.path.join(path, f"head_0_{epoch}.npy"), 'wb') as f:
-            np.save(f, weights)
-
-    def store_heads(self, path):
+    def store_heads(self, path: str):
         """
         Store the training models to the given path
         :param path: path where models should be stored
@@ -163,11 +151,7 @@ class BootstrapDQN:
         for idx, model in enumerate(self.heads):
             model.save(os.path.join(path, f"head_{idx}.h5"))
 
-        ## It can be used to reconstruct the model identically
-        # reconstructed_model = keras.models.load_model("my_h5_model.h5")
-
-
-    def update(self, states: tf.Tensor, targets: tf.Tensor, epochs: int, idx: int):
+    def update(self, states: np.array, targets: tf.Tensor, epochs: int, idx: int):
         """
         Update the weights of the DQN based on the given training samples.
 
@@ -185,7 +169,7 @@ class BootstrapDQN:
         """
         self.target_heads[idx].set_weights(self.heads[idx].get_weights())
 
-    def predict(self, state: tf.Tensor, idx: int, use_target: bool = False):
+    def predict(self, state: np.array, idx: int, use_target: bool = False):
         """
         Predict with the DQN the q-values for each action for the given state
 
@@ -257,16 +241,6 @@ class BootstrapDQN:
                 q_values = self.predict(state=states_c, use_target=False, idx=head_idx).numpy()
                 q_values[np.arange(0, len(q_values)), actions[mask == 1]] = rewards_t
 
-                # print("-----------------------------")
-                # print(states_c)
-                # print("-----------------------------")
-                # print(q_values_next)
-                # print(rewards_t)
-                # print("-----------------------------")
-                # if None in q_values:
-                #     raise ValueError("Nan found")
-                # if None in rewards_t:
-                #     raise ValueError("Nan found")
                 self.update(states=states_c, targets=q_values, epochs=epochs, idx=head_idx)
 
             head_list = list(np.arange(len(self.heads)))
@@ -277,7 +251,8 @@ class BootstrapDQN:
         return memory
 
 
-def plot_and_save_results(rewards, days_uncaught, title, goal, max_days, file_path=None):
+def plot_and_save_results(rewards: List, days_uncaught: List, title: str,
+                          goal: int, max_days: int, file_path: Optional[str] = None):
     """
     Plot the rewards obtained in each episode and the number of days the agent was not caught in an episode
 
@@ -285,6 +260,7 @@ def plot_and_save_results(rewards, days_uncaught, title, goal, max_days, file_pa
     :param days_uncaught: the number of days the agent was not being caught in an episode
     :param title: the title of the graph
     :param goal: the maximum possible obtainable goal
+    :param max_days: the maximum number of days in an episode
     :param file_path: the file path where the graph should be saved
     """
     # Close all previous windows
@@ -312,7 +288,8 @@ def plot_and_save_results(rewards, days_uncaught, title, goal, max_days, file_pa
         plt.show()
 
 
-def run_q_learning(env, model, params, show_output):
+def run_q_learning(env: BenchmarkEnvironment, model: BootstrapDQN, params: Dict, show_output: bool) \
+        -> Tuple[List, List, pd.DataFrame]:
     """
     Use an q-learning in the given environment
 
@@ -322,9 +299,7 @@ def run_q_learning(env, model, params, show_output):
     :param show_output: whether to show the plots during learning
     :return: the final rewards and days without being caught per episode
     """
-    df = pd.DataFrame([],
-                      columns=["episode", "head", "eps_episode", "day", "state", "action", "random",
-                               "reward", "next_state", "total"])
+    df = pd.DataFrame([])
     # Set the most used parameters
     epochs = params["epochs"]
 
@@ -332,40 +307,23 @@ def run_q_learning(env, model, params, show_output):
     memory = []
     final = []
     days_uncaught = []
-    stretched_eps = 0
 
     # Run for the given number of episodes
     for episode in tqdm(range(params["max_episodes"])):
-
         # Reset state
         state = env.reset()
         total = 0
         head_idx = random.randint(0, len(model.heads) - 1)
 
-        # Only start decreasing epsilon when learning has started
-        if len(memory) < params["replay_size"]:
-            stretched_eps += 1
-
-        if params["stretched"]:
-            ep = episode - stretched_eps
-            # Obtain epsilon for this episode
-            if params["eps_decay"] == "linear":
-                eps_episode = max((0.01 - 1) * ep / params["e_episodes"] + 1, 0.01)
-            elif params["eps_decay"] == "annealing":
-                eps_episode = max(pow(params["epsilon_factor"], ep), 0.01)
-            else:
-                eps_episode = params["epsilon"]
-
+        # Obtain epsilon for this episode
+        if params["eps_decay"] == "linear":
+            eps_episode = 0
+            if params["e_episodes"] >= 1:
+                eps_episode = max((0.01 - 1) * episode / params["e_episodes"] + 1, 0.01)
+        elif params["eps_decay"] == "annealing":
+            eps_episode = max(pow(params["epsilon_factor"], episode), 0.01)
         else:
-            # Obtain epsilon for this episode
-            if params["eps_decay"] == "linear":
-                eps_episode = 0
-                if params["e_episodes"] >= 1:
-                    eps_episode = max((0.01 - 1) * episode / params["e_episodes"] + 1, 0.01)
-            elif params["eps_decay"] == "annealing":
-                eps_episode = max(pow(params["epsilon_factor"], episode), 0.01)
-            else:
-                eps_episode = params["epsilon"]
+            eps_episode = params["epsilon"]
 
         # Update the target model when using a separate one and n_steps have passed
         if model.double and episode % params["n_update"] == 0:
@@ -373,10 +331,8 @@ def run_q_learning(env, model, params, show_output):
                 model.target_update(idx=i)
 
         day = 0
-        # model.store_single_head(path="temporary_single_head/", epoch=episode)
         # Run for the maximum number of days
         while day < params["max_days"]:
-            better_action = True
             is_random = False
             # Use a greedy search policy
             if random.random() < eps_episode or len(memory) < params["replay_size"]:
@@ -392,7 +348,6 @@ def run_q_learning(env, model, params, show_output):
                 # Find the best action
                 norm_state = state.copy()
                 if day != 0:
-                    # todo: how to do norm
                     norm_state = norm_state / [env.div_amount * env.div_account * day, 1]
                 norm_state = tf.convert_to_tensor(norm_state.reshape(1, -1))
                 q_values = model.predict(state=norm_state, idx=head_idx, use_target=False).numpy()
@@ -404,24 +359,15 @@ def run_q_learning(env, model, params, show_output):
                     q_values[0][action] = -1
                     action = np.argmax(q_values)
                     if max(q_values[0]) == -1:
-                        better_action = False
                         break
 
             # Perform the chosen action; if this is the last day then done should be set to True
             next_state, reward, done = env.step(state=state, action=action)
 
-            if round(next_state[-1] * env.max_days) == day:
-                raise ValueError("Day did not change")
             day = round(next_state[-1] * env.max_days)
             if day == params["max_days"]:
                 done = True
             elif day > params["max_days"]:
-                # print(df)
-                # print(next_state)
-                # print(state)
-                # print(day)
-                if better_action:
-                    raise ValueError("should not be true")
                 done = True
                 reward = 0
 
@@ -450,17 +396,6 @@ def run_q_learning(env, model, params, show_output):
                             "next_state": next_state,
                             "total": total}, ignore_index=True)
 
-            if len(df) > 1:
-                if reward < 0:
-                    if df["action"].iloc[-1][0] == 0:
-                        print(df)
-                        raise ValueError("AMOUNT IS ZERO BUT REWARD NEGATIVE")
-            # if len(df) > 50 and sum(df["reward"][-30:]) == 0 and len(set(df["reward"][-30:].values)) == 1:
-            #     print(df)
-            #     # model.store_heads(path="./temporary/")
-            #     raise ValueError("always zero")
-
-
             if done:
                 # The run is done, so optionally train on the last sample and then break
                 if not params["replay"]:
@@ -473,8 +408,7 @@ def run_q_learning(env, model, params, show_output):
                 break
 
             if params["replay"]:
-                # Train the model by replaying a batch of the memory
-                # todo: train every model or only current one?
+                # Train the models by replaying a batch of the memory
                 memory = model.replay(memory=memory, size=params["replay_size"], gamma=params["gamma"], epochs=epochs,
                                       finite=params["finite"], sample_method=params["sampling"],
                                       prio_buffer=params["prio_buffering"])
@@ -497,13 +431,14 @@ def run_q_learning(env, model, params, show_output):
     return final, days_uncaught, df
 
 
-def store_results(params, final, days, df, model):
+def store_results(params: Dict, final: List, days: List, df: pd.DataFrame, model: BootstrapDQN):
     """
     Store the results from the complete simulation
 
     :param params: the params used in the simulation
     :param final: the final rewards obtained in each episode
     :param days: the number of days of being uncaught in each episode
+    :param df: a dataframe containing all actions taken with extra information like randomness
     :param model: the model
     """
     # Save all parameters and the plot in one directory
@@ -603,15 +538,14 @@ def single_run():
         },
         "simulation": {
             "type": "scatter-gather",
-            "max_episodes": epi,
-            "e_episodes": epi,
+            "max_episodes": 1,
+            "e_episodes": 1,
             "sampling": "max_rewards",
             "prio_buffering": True,
             "finite": 500,
             "replay": True,
             "replay_size": 100,
             "n_update": 10,
-            "stretched": False,
             "epsilon": .1,
             "epsilon_factor": 0.998,
             "eps_decay": "linear",
@@ -619,163 +553,17 @@ def single_run():
             "probability": 0.5,
             "converge_steps": -10 * 10,
             "gamma": 0.99,
-            "goal": 5000 * 3 * (15-2),
+            "goal": 5000 * 3 * (15 - 2),
             "max_days": 3,
             "title": "Launder as much as possible",
         },
-        "file_path": "./results/test_run/",
+        "file_path": "./results/test_toy_bdqn/",
     }
     run_experiment(params=parameters)
 
 
-def parameter_sweep(args):
-    todo_params = []
-    # for n_days, lr in [(3, 0.01), (3, 0.05), (3, 0.075)]:
-    for n_days, lr in [(5, 0.05)]:
-        for decay_type in ["linear"]:
-            for sampling_type, e_epi, max_epi in [("max_rewards", 1000, 2500)]:
-                for use_first, use_second, use_third in [(False, True, False)]:
-                    for prio_buff in [False]:
-                        todo_params.append([{
-                            "model": {
-                                "loss": "mse",
-                                "learning_rate": lr,
-                                "hidden_dim": 128,
-                                "double": True,
-                                "n_heads": 10,
-                            },
-                            "environment": {
-                                "div_amount": 7000,
-                                "div_account": 15,
-                                "div_days": n_days,
-                                "div_reward": 1,
-                                "brs": {
-                                    1: {
-                                        "use_br": use_first,
-                                        "threshold": 5000
-                                    },
-                                    2: {
-                                        "use_br": use_second,
-                                        "threshold": 7
-                                    },
-                                    3: {
-                                        "use_br": use_third,
-                                        "threshold": 22000
-                                    }
-                                }
-                            },
-                            "action_space": {
-                                "success": 1,
-                                "caught": 0,
-                                "min_amount": 0,
-                                "step_amount": 1000,
-                                "min_account": 4,
-                                "step_account": 1,
-                                "min_days": 1,
-                                "step_days": 1,
-                            },
-                            "simulation": {
-                                # DQN
-                                "epochs": 150,
-                                "prio_buffering": prio_buff,
-                                "finite": 500,
-                                "replay": True,
-                                "replay_size": 75,
-                                "sampling": sampling_type,
-                                "n_update": 50,
-                                "gamma": 0.99,
-
-                                # Bootstrap
-                                "probability": 0.5,
-                                "converge_steps": -5 * 10,
-
-                                # Exploration
-                                "epsilon": .1,
-                                "epsilon_factor": 0.998,
-                                "eps_decay": decay_type,
-                                "stretched": False,
-
-                                # General
-                                "max_days": n_days,
-                                "e_episodes": e_epi,
-                                "max_episodes": max_epi,
-                                "type": "scatter-gather",
-
-                                # Plots
-                                "goal": 80000,
-                                "title": "Launder as much as possible",
-                            },
-                            "file_path": f"../../FINAL_RESULTS_UPDATED/Experiments/Experiment_final/BDQN/business_rule_{2 if use_second else 3 if use_third else 12}/{n_days}_days/normal/learning_rate_0.05/{decay_type}_{sampling_type}_{e_epi}_{max_epi}/"
-                        }])
-
-    with WorkerPool(cpu_ids=args.cpu_ids, n_jobs=args.n_jobs) as wp:
-        wp.map(run_experiment, todo_params, progress_bar=True)
-
-    # # Evaluate all results
-    # parameters = todo_params[-1][0]
-    # # parameters["file_path"] = "../goliath_results/AMAP/bootstrap_conv_06_04_2021"
-    # # parameters["file_path"] = "../goliath_results/AMAP/bootstrap_conv_09_04_2021"
-    # dirs = os.listdir(parameters["file_path"])
-    # df = pd.DataFrame([])
-    # for file_dir in dirs:
-    #     if file_dir.endswith("evaluation.csv"):
-    #         continue
-    #
-    #     params = pd.read_json(os.path.join(parameters["file_path"], file_dir, "params.json"), orient="index")
-    #     new_df = params.loc["simulation"]
-    #     new_df["number of heads"] = params.loc["model"]["n_heads"]
-    #     new_df = new_df.append(pd.Series([file_dir], index=["file"]))
-    #     new_df = new_df.dropna()
-    #     results = pd.read_csv(os.path.join(parameters["file_path"], file_dir, "action_states.csv"))
-    #     if "episode" in results.columns:
-    #         total = results.drop_duplicates(subset=["episode"], keep="last")["total"]
-    #         new_df["average"] = np.mean(total[-50:])
-    #         new_df["deviation"] = np.std(total[-50:])
-    #     else:
-    #         indices = np.arange(len(results))[results["day"] == 1]
-    #         indices += 2
-    #         total = results.loc[indices]["total"]
-    #         new_df["average"] = np.mean(total[-50:])
-    #         new_df["deviation"] = np.std(total[-50:])
-    #     new_df = pd.DataFrame(new_df).T
-    #     new_df = new_df.set_index("file")
-    #     df = pd.concat([df, new_df])
-    # df.to_csv(os.path.join(parameters["file_path"], "evaluation.csv"))
-
-
-def _parser():
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--n-jobs",
-        type=int,
-        required=True,
-    )
-
-    parser.add_argument(
-        "--cpu-ids",
-        nargs='+',
-        default=[],
-    )
-
-    return parser
-
-
-def parse_args():
-    """
-    Parse command line interface (CLI) arguments.
-
-    :return: CLI arguments
-    """
-    args = _parser().parse_args()
-    args.cpu_ids = [int(i) for i in args.cpu_ids]
-    args.cpu_ids = [i for i in range(args.cpu_ids[0], args.cpu_ids[1] + 1)]
-    return args
-
-
 def main():
-    args = parse_args()
-    # single_run()
-    parameter_sweep(args=args)
+    single_run()
 
 
 if __name__ == "__main__":

@@ -44,33 +44,32 @@ conda activate venv
 pip install -r requirements.txt
 ```
 
-5. Follow the instructions in the README in `AMLSim/jars` (or ask Ingeborg for a zip ;) and extract the zip in 
-   `AMLSim/jars/`)
+5. Follow the instructions in the README in `AMLSim/jars`
    
-6. To have all the modules available, run
-``` python
-pip install -e .
-```
+[comment]: <> (6. To have all the modules available, run)
+
+[comment]: <> (``` python)
+
+[comment]: <> (pip install -e .)
+
+[comment]: <> (```)
 
 
 ## Running instructions
-The script `start_new_run.py` should be run when you start a new simulation.
-In this script you can set some of the parameters. You can also change them yourselves in the confs, but this requires 
-some knowledge about the simulation and models.
+In the directory `toy_examples` the four different models (Random, SVM, DQN and BDQN) scripts can be found.
+These scripts only work with some easy business rules that are defined in `create_action_space.py` in the same 
+directory. You can change the used parameters and add/modify/delete business rules in these scripts.
+Each one of them can be run with `python3 launder_as_much_<model>.py`. If everything went okay, then you should
+see a directory `setting_1000_<id>` (check the path in the script to see where it should have written to). 
 
-If you want to continue a simulation, or have run `start_new_run.py` you can start the simulation by 
-running the bash script `RUN_SIMULATION`. You can change the number of steps by changing the counter in the while 
-condition (line 5).
+In this directory you can find a plot, showing the learning behaviour (in case of BDQN this one does not make much 
+sense since it includes all heads), a json file containing the parameters used in the setting, and a CSV file
+containing all the states-actions taken during the games. 
+In case of BDQN the final weights of the heads are also stored.
 
-If everything went okay, then you should see a directory with the date and time you started the simulation 
-in `learning_agent/results`. This directory should contain the `amlsim_conf.json` and the `learning_conf.json` 
-as well as `alertPatterns.csv`. They should include enough information to reproduce the same run 
-(there will be some randomness in the simulation though). This directory also contains the output of the simulation in 
-three files: `results.csv`, `laundered_actions.csv` and `prevented_actions.csv`.
-
-#### WARNING
-If you run a simulation you cannot open a file in the results folders since this folder's modification will change and be the latest directory.
-The results are written to the latest directory and therefore these results will be overwritten.
+For more complex business rules the file `Game.py` in the directory `q_agent` can be used. It is called with
+`python3 Game.py`, all the needed params need to be defined in the script itself. Note that you need to link a 
+business rule engine (some code that detects transactions according to some logic) yourself. 
 
 ### Parameters
 There are a lot of variables that can be changed. (like a lot lot)

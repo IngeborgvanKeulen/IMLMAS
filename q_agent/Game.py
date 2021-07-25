@@ -1,11 +1,11 @@
 import json
 import logging
 import os
-from argparse import ArgumentParser, Namespace
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, List, Optional, Union
 
 import matplotlib
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
@@ -158,19 +158,16 @@ def run_games(params: Dict[str, Union[str, Dict]]):
     store_results(params, final, days, df, model)
 
 
-def parameter_sweep(args: Namespace):
+def parameter_sweep():
     """
     This function runs the simulation for all different parameter settings in todo_params.
-    At the end all simulation are evaluated by looking at the last 50 games.
-
-    :param args: the jobs and cpu ids arguments
     """
     todo_params = []
     for n_days in [3]:
         for decay_type in ["linear"]:
-            for model, e_epi, max_epi in [("BDQN", 1750, 2500), ("DQN", 1000, 2000), ("DQN", 1000, 2000), ("DQN", 1000, 2000)]:
+            for e_epi, max_epi in [(1750, 2500), (1000, 2000)]:
                 for sampling_type, prio_buff in [("random", False)]:
-                    for _ in ["BDQN"]:
+                    for model in ["BDQN"]:
                         todo_params.append([{
                             "agent_model": model,
                             "model": {
@@ -222,7 +219,6 @@ def parameter_sweep(args: Namespace):
                                 "epsilon": .1,
                                 "epsilon_factor": 0.998,
                                 "eps_decay": decay_type,
-                                "stretched": False,
 
                                 # General
                                 "max_days": n_days,
@@ -233,7 +229,7 @@ def parameter_sweep(args: Namespace):
                                 "goal": 80000,
                                 "title": "Launder as much as possible",
                             },
-                            "file_path": f"../../FINAL_RESULTS_UPDATED/Experiments/Experiment_final/{model}/business_rule_4/{n_days}_days/{decay_type}_{sampling_type}_{e_epi}_{max_epi}/",
+                            "file_path": "./test_game/",
                         }])
 
     conf_file = "./engine_conf.json"
@@ -245,46 +241,9 @@ def parameter_sweep(args: Namespace):
 
         run_games(i[0])
 
-    # Evaluate all results
-    parameters = todo_params[-1][0]
-    dirs = os.listdir(parameters["file_path"])
-    df = pd.DataFrame([])
-    for file_dir in dirs:
-        if file_dir.endswith("csv"):
-            continue
-        # Get the parameters for this specific simulation
-        params = pd.read_json(os.path.join(parameters["file_path"], file_dir, "params.json"), orient="index")
-        new_df = params.loc["simulation"]
-        new_df = new_df.append(pd.Series([file_dir], index=["file"]))
-        new_df = new_df.dropna()
-
-        # Get the rewards obtained per game and calculate the mean and std for the last 50 games
-        results = pd.read_csv(os.path.join(parameters["file_path"], file_dir, "action_states.csv"))
-        total = results.drop_duplicates(subset=["episode"], keep="last")["total"]
-        new_df["average"] = np.mean(total[-50:])
-        new_df["deviation"] = np.std(total[-50:])
-        new_df = pd.DataFrame(new_df).T
-        new_df = new_df.set_index("file")
-
-        # Combine the information in one single file
-        df = pd.concat([df, new_df])
-    df.to_csv(os.path.join(parameters["file_path"], "evaluation.csv"))
-
-
-def parse_args():
-    """
-    Parse command line interface (CLI) arguments.
-
-    :return: CLI arguments
-    """
-    parser = ArgumentParser()
-    args = parser.parse_args()
-    return args
-
 
 def main():
-    args = parse_args()
-    parameter_sweep(args=args)
+    parameter_sweep()
 
 
 if __name__ == "__main__":

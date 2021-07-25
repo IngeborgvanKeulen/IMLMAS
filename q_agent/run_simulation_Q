@@ -8,7 +8,7 @@ cp -R q_agent/amlsim_conf.json AMLSim/paramFiles/ml_agent
   # 1. Generate transaction CSV files from parameter files (python)
   python3 scripts/transaction_graph_generator.py paramFiles/ml_agent/amlsim_conf.json
 
-  # 2. Build and launch the transaction simulator (Java)
+  # 2. Build and launch the transaction simulator (Java), run the build step once
 #  scripts/build_AMLSim.sh
   scripts/run_AMLSim.sh paramFiles/ml_agent/amlsim_conf.json
 

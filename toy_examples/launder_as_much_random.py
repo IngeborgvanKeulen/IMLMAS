@@ -2,14 +2,12 @@ import json
 import logging
 import os
 import random
-from argparse import ArgumentParser, Namespace
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from mpire import WorkerPool
 from sklearn import svm
 from tqdm import tqdm
 
@@ -196,13 +194,11 @@ def plot_and_save_results(rewards: List, days_uncaught: List, title: str,
         plt.show()
 
 
-def run_learning(env: BenchmarkEnvironment, model: SVM, params: Dict, show_output: bool) \
-        -> Tuple[List, List, pd.DataFrame]:
+def run_learning(env: BenchmarkEnvironment, params: Dict, show_output: bool) -> Tuple[List, List, pd.DataFrame]:
     """
     Use svm learning in the given environment.
 
     :param env: the simulation environment
-    :param model: the svm model
     :param params: the parameters for the simulation
     :param show_output: whether to show the plots during learning
     :return: the final rewards, days without being caught per episode and all taken actions
@@ -211,26 +207,15 @@ def run_learning(env: BenchmarkEnvironment, model: SVM, params: Dict, show_outpu
     max_days = params["max_days"]
 
     # Initialize the memory buffer; rewards; days per episode; dataframe for all actions
-    memory = []
     final = []
     days_uncaught = []
-    df = pd.DataFrame([], columns=["episode", "eps_episode", "day", "state", "action",
-                                   "random", "reward", "next_state", "total"])
+    df = pd.DataFrame([], columns=["episode", "day", "state", "action", "random", "reward", "next_state", "total"])
 
     # Run for the given number of episodes
     for episode in tqdm(range(params["episodes"])):
         # Reset the environment
         state = env.reset()
         total = 0
-
-        # Todo: before 12/04 linear and annealing were swapped
-        # Obtain epsilon for this episode
-        if params["eps_decay"] == "linear":
-            eps_episode = max((0.01 - 1) * episode / (0.9 * params["episodes"]) + 1, 0.01)
-        elif params["eps_decay"] == "annealing":
-            eps_episode = max(pow(params["epsilon_factor"], episode), 0.01)
-        else:
-            eps_episode = params["epsilon"]
 
         day = 0
         # Run for the maximum number of days
@@ -261,7 +246,6 @@ def run_learning(env: BenchmarkEnvironment, model: SVM, params: Dict, show_outpu
 
             # Add the current action and context information to the dataframe
             df = df.append({"episode": episode,
-                            "eps_episode": eps_episode,
                             "day": day,
                             "state": state * [env.div_amount, env.div_account, env.max_days],
                             "action": env.action_space[action] * [env.div_amount, env.div_account, env.div_days],
@@ -339,10 +323,9 @@ def run_experiment(params: Dict[str, Dict]):
     action_space = create_action_space(params=params["action_space"], **params["environment"])
     env = BenchmarkEnvironment(action_space=action_space, **params["environment"],
                                max_days=params["simulation"]["max_days"], type=params["simulation"]["type"])
-    model = SVM(**params["model"])
 
     # Run the simulation
-    final, days, df = run_learning(env=env, model=model, params=params["simulation"], show_output=False)
+    final, days, df = run_learning(env=env, params=params["simulation"], show_output=False)
 
     # Update the parameters with the number of features
     params["model"].update({"number of features": env.action_space.shape[1]})
@@ -367,7 +350,7 @@ def single_run():
             "div_amount": 7000,
             "div_account": 15,
             "div_days": 3,
-            "div_reward": (15-2) * 7000,
+            "div_reward": (15 - 2) * 7000,
             "brs": {
                 1: {
                     "use_br": True,
@@ -395,145 +378,18 @@ def single_run():
         },
         "simulation": {
             "type": "scatter-gather",
-            "episodes": 1000,
-            "prio_buffering": True,
-            "finite": 30000,
-            "replay": True,
-            "epsilon": .1,
-            "epsilon_factor": 0.998,
-            "eps_decay": "annealing",
-            "goal": 5000 * 3 * (15-2),
+            "episodes": 1,
+            "goal": 5000 * 3 * (15 - 2),
             "max_days": 3,
             "title": "Launder as much as possible",
         },
-        "file_path": "./results/thesis/SVM/",
+        "file_path": "./results/test_toy_random/",
     }
     run_experiment(params=parameters)
 
 
-def parameter_sweep(args: Namespace):
-    """
-    This function runs the simulation for all different parameter settings in todo_params.
-    At the end all simulation are evaluated by looking at the last 50 games.
-
-    :param args: the jobs and cpu ids arguments
-    """
-    todo_params = []
-    for epi in [3000]:
-        for repeat in [1, 2, 3]:
-            for use_br1, use_br2, use_br3 in [(True, False, False), (False, True, False), (False, False, True)]:
-                todo_params.append([{
-                    "model": {
-                        "kernel": "rbf",
-                        "regularization": 1000,
-                        "tol": 1e-3,
-                        "gamma": "scale",
-                    },
-                    "environment": {
-                        "div_amount": 7000,
-                        "div_account": 15,
-                        "div_days": 3,
-                        "div_reward": (15-2) * 7000,
-                        "brs": {
-                            1: {
-                                "use_br": use_br1,
-                                "threshold": 5000
-                            },
-                            2: {
-                                "use_br": False,
-                                "threshold": 7
-                            },
-                            3: {
-                                "use_br": use_br3,
-                                "threshold": 22000
-                            }
-                        }
-                    },
-                    "action_space": {
-                        "success": 1,
-                        "caught": 0,
-                        "min_amount": 0,
-                        "step_amount": 1000,
-                        "min_account": 4,
-                        "step_account": 1,
-                        "min_days": 1,
-                        "step_days": 1,
-                    },
-                    "simulation": {
-                        "type": "scatter-gather",
-                        "episodes": epi,
-                        "prio_buffering": True,
-                        "finite": 30000,
-                        "replay": True,
-                        "epsilon": .1,
-                        "epsilon_factor": 0.998,
-                        "eps_decay": "linear",
-                        "goal": 5000 * 3 * (15-2),
-                        "max_days": 3,
-                        "title": "Launder as much as possible",
-                    },
-                    "file_path": f"../../FINAL_RESULTS_UPDATED/Experiments/Experiment_1/RANDOM/business_rule_{1 if use_br1 else 2 if use_br2 else 3}/episodes_{epi}/",
-                }])
-
-    # Run the settings in parallel
-    with WorkerPool(cpu_ids=args.cpu_ids, n_jobs=args.n_jobs) as wp:
-        wp.map(run_experiment, todo_params, progress_bar=True)
-
-    # Evaluate all results
-    parameters = todo_params[-1][0]
-    dirs = os.listdir(parameters["file_path"])
-    df = pd.DataFrame([])
-    for file_dir in dirs:
-        if file_dir.endswith("csv"):
-            continue
-        # Get the parameters for this specific simulation
-        params = pd.read_json(os.path.join(parameters["file_path"], file_dir, "params.json"), orient="index")
-        new_df = params.loc["simulation"]
-        new_df = new_df.append(pd.Series([file_dir], index=["file"]))
-        new_df = new_df.dropna()
-
-        # Get the rewards obtained per game and calculate the mean and std for the last 50 games
-        results = pd.read_csv(os.path.join(parameters["file_path"], file_dir, "action_states.csv"))
-        total = results.drop_duplicates(subset=["episode"], keep="last")["total"]
-        new_df["average"] = np.mean(total[-50:])
-        new_df["deviation"] = np.std(total[-50:])
-        new_df = pd.DataFrame(new_df).T
-        new_df = new_df.set_index("file")
-
-        # Combine the information in one single file
-        df = pd.concat([df, new_df])
-    df.to_csv(os.path.join(parameters["file_path"], "evaluation.csv"))
-
-
-def parse_args():
-    """
-    Parse command line interface (CLI) arguments.
-
-    :return: CLI arguments
-    """
-    parser = ArgumentParser()
-    parser.add_argument(
-        "--n-jobs",
-        type=int,
-        required=True,
-    )
-
-    parser.add_argument(
-        "--cpu-ids",
-        nargs='+',
-        default=[],
-    )
-
-    args = parser.parse_args()
-    args.cpu_ids = [int(i) for i in args.cpu_ids]
-    args.cpu_ids = [i for i in range(args.cpu_ids[0], args.cpu_ids[1] + 1)]
-    return args
-
-
 def main():
-    args = parse_args()
-    # single_run()
-    parameter_sweep(args=args)
+    single_run()
 
 
 if __name__ == "__main__":

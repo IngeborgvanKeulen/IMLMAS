@@ -87,7 +87,7 @@ class BenchmarkEnvironment:
         # Run the simulation part
         bashCommand = "./q_agent/run_simulation_Q"
         process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE, cwd="../")
-        output, error = process.communicate()
+        _, _ = process.communicate()
 
         # Run the detection
         run_detection(brs=brs)
