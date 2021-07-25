@@ -1,0 +1,12 @@
+{
+  "step": 107,
+  "process_alerts": {
+    "input_path": "../AMLSim/outputs/ml_agent",
+    "output_path": "./output/",
+    "result_path": "../../FINAL_RESULTS_UPDATED/Experiments/Experiment_final/DQN/business_rule_4/3_days/linear_random_1000_2000/",
+    "result_file": "results.csv",
+    "engine_zip": "/files/alert_engine_output.zip",
+    "full_investigation": true,
+    "transactions_path": "../AMLSim/outputs/ml_agent/transactions.csv"
+  }
+}
