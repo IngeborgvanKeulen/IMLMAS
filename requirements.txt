@@ -1,0 +1,10 @@
+pygraphviz
+networkx==1.11
+powerlaw
+keras==2.4.3
+tensorflow
+pandas>=1.1.0
+scikit-learn
+tqdm
+numpy
+matplotlib

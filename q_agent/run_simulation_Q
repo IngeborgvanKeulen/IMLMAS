@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+set -e
+
+# 0. Overwrite the conf file in AMLSim
+cp -R q_agent/amlsim_conf.json AMLSim/paramFiles/ml_agent
+
+(cd AMLSim &&
+  # 1. Generate transaction CSV files from parameter files (python)
+  python3 scripts/transaction_graph_generator.py paramFiles/ml_agent/amlsim_conf.json
+
+  # 2. Build and launch the transaction simulator (Java), run the build step once
+  scripts/build_AMLSim.sh
+  scripts/run_AMLSim.sh paramFiles/ml_agent/amlsim_conf.json
+
+  # 3. Convert the raw transaction log file
+  python3 scripts/convert_logs.py paramFiles/ml_agent/amlsim_conf.json
+)

@@ -1,0 +1,46 @@
+# Compiled class file
+bin/
+
+# Log file
+logs/
+*.log
+
+# BlueJ files
+*.ctxt
+
+# Mobile Tools for Java (J2ME)
+.mtj.tmp/
+
+# Package Files #
+*.jar
+!paysim.jar
+*.war
+*.ear
+*.zip
+*.tar.gz
+*.rar
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Temporal files
+tmp/
+__pycache__/
+/*.png
+.DS_Store
+
+# Param files for testing
+paramFiles/city*/
+paramFiles/bank_*
+paramFiles/person_*/
+paramFiles/test_*/
+sample/*_*/
+
+# Output data except README.md
+outputs/
+!outputs/README.md
+
