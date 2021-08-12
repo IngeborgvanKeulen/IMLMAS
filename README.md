@@ -1,6 +1,6 @@
-# master_thesis
+# IMLMAS (Intelligent Money Laundering Multi-Agent System)
 This repository contains the code used for the master thesis "Hiding Money Laundering with an Intelligent Multi-Agent 
-Systems Simulation" from Ingeborg van Keulen. It heavily relies on AMLSim (see https://github.com/IBM/AMLSim).
+System Simulation" from Ingeborg van Keulen. It heavily relies on AMLSim (see https://github.com/IBM/AMLSim).
 
 
 ## Prerequisites
